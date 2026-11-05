@@ -1,0 +1,10 @@
+[build]
+# i586 rather than i686: i686-unknown-linux-gnu requires SSE2, which KidneyOS
+# doesn't enable (or save/restore) for user programs.
+target = "i586-unknown-linux-gnu"
+
+[target.i586-unknown-linux-gnu]
+linker = "i686-unknown-linux-gnu-cc"
+# Load well above the user stack VMA (0x100000..0x1100000), which would
+# otherwise demand-page any part of .bss the ELF loader failed to map.
+rustflags = ["-C", "link-args=-e _start -static -nostartfiles -Wl,--image-base=0x20000000"]

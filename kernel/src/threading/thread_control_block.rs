@@ -122,6 +122,8 @@ pub enum ThreadElfCreateError {
     UnsupportedArchitecture,
     NotExecutable,
     InvalidEntryPoint,
+    /// A loadable segment doesn't fit in the user part of the address space.
+    InvalidSegment,
 }
 
 impl ThreadControlBlock {
@@ -163,9 +165,24 @@ impl ThreadControlBlock {
                 program_header.virtual_address as usize / PAGE_FRAME_SIZE;
             let segment_virtual_start = segment_virtual_frame_start * PAGE_FRAME_SIZE;
             let segment_padding = program_header.virtual_address as usize % PAGE_FRAME_SIZE;
-            let segment_padded_size = segment_padding + program_header.data.len();
+            // The segment occupies `memory_size` bytes in memory, of which only
+            // the first `data.len()` (the file size) come from the file; the rest
+            // (e.g. .bss) must be zero.
+            // The parser guarantees memory_size >= data.len().
+            let segment_padded_size = segment_padding
+                .checked_add(program_header.memory_size as usize)
+                .ok_or(ThreadElfCreateError::InvalidSegment)?;
 
             let frames = segment_padded_size.div_ceil(PAGE_FRAME_SIZE);
+
+            // The mapped range must lie entirely in user space.
+            let segment_virtual_end = frames
+                .checked_mul(PAGE_FRAME_SIZE)
+                .and_then(|len| len.checked_add(segment_virtual_start))
+                .ok_or(ThreadElfCreateError::InvalidSegment)?;
+            if segment_virtual_end > OFFSET {
+                return Err(ThreadElfCreateError::InvalidSegment);
+            }
 
             unsafe {
                 // TODO: Save this physical address somewhere so we can deallocate
@@ -193,21 +210,16 @@ impl ThreadControlBlock {
                     true,
                 );
 
-                write_bytes(kernel_virt_addr, 0, segment_padded_size);
+                // Zero all mapped frames: the padding before the segment, the
+                // part of the segment not backed by the file, and the sliver
+                // after the segment up to the end of its last frame.
+                write_bytes(kernel_virt_addr, 0, frames * PAGE_FRAME_SIZE);
 
                 // Load so we can write to the virtual addresses mapped above.
                 copy_nonoverlapping(
                     program_header.data.as_ptr(),
                     kernel_virt_addr.add(segment_padding),
                     program_header.data.len(),
-                );
-
-                // Zero the sliver of addresses between the end of the region, and
-                // the end of the region we had to map due to page
-                write_bytes(
-                    kernel_virt_addr.add(segment_padded_size),
-                    0,
-                    frames * PAGE_FRAME_SIZE - segment_padded_size,
                 );
             }
         }
