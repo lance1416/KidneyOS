@@ -1,5 +1,6 @@
 //! The Rust entry point of the x86_64 kernel.
 
+use super::{gdt, idt};
 use core::{arch::asm, panic::PanicInfo};
 use kidneyos_shared::{
     eprintln,
@@ -38,6 +39,13 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
         magic, EXPECTED_MAGIC,
         "invalid multiboot2 magic, expected {EXPECTED_MAGIC:#X}, got {magic:#X}"
     );
+
+    // SAFETY: Called once, with interrupts disabled.
+    unsafe {
+        gdt::init();
+        idt::init();
+    }
+    println!("GDT, TSS and IDT loaded");
 
     // SAFETY: The bootloader passed the physical address of a valid boot
     // information structure, which starts with `Info` (its total size) and

@@ -4,9 +4,9 @@
 // Only used by the buddy allocator tests.
 #![cfg_attr(test, feature(btreemap_alloc, slice_ptr_get))]
 
-// While KidneyOS is being ported to x86_64, only `arch` is built for it: its
-// `x86_64` module has its own entry point (`kmain`), and everything else is
-// still i686 only.
+// While KidneyOS is being ported to x86_64, only `arch` and `interrupts` are
+// built for it: the `x86_64` module has its own entry point (`kmain`), and
+// everything else is still i686 only.
 mod arch;
 #[cfg(target_arch = "x86")]
 mod block;
@@ -14,7 +14,6 @@ mod block;
 mod drivers;
 #[cfg(target_arch = "x86")]
 pub mod fs;
-#[cfg(target_arch = "x86")]
 mod interrupts;
 #[cfg(target_arch = "x86")]
 pub mod mem;

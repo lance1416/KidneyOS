@@ -11,12 +11,17 @@
 # Everything up to the jump to the higher half runs at its physical address,
 # so it lives in the `.boot.*` sections, which build-support/x86_64.ld links
 # at (virtual = physical) addresses below 4GiB. The temporary page tables map
-# physical 0..1GiB twice, with 2MiB pages:
+# physical 0..1GiB three times, with 2MiB pages:
 #
-#   - identity mapped at 0..1GiB, for this stub (and, for now, the GDT and the
-#     multiboot2 information);
+#   - identity mapped at 0..1GiB, for this stub and its GDT;
+#   - at PHYS_MAP_OFFSET (0xFFFF800000000000, PML4 entry 256), the start of the
+#     direct map of physical memory, which the kernel uses to reach the
+#     multiboot2 information, VGA memory and the page tables it builds;
 #   - at KERNEL_BASE (-2GiB, 0xFFFFFFFF80000000) .. -1GiB, where the kernel is
 #     linked.
+#
+# The kernel replaces these page tables, and the GDT, with its own (see
+# paging.rs and gdt.rs), which no longer have the identity map.
 #
 # This file is assembled by `global_asm!` in boot.rs, in AT&T syntax.
 
@@ -128,13 +133,15 @@ _start:
     mov $((boot_page_tables_end - boot_page_tables) / 4), %ecx
     rep stosl
 
-    # PML4[0] -> boot_pdpt_low (0..512GiB), PML4[511] -> boot_pdpt_high
-    # (-512GiB..0).
+    # PML4[0] (0..512GiB) and PML4[256] (PHYS_MAP_OFFSET..+512GiB) ->
+    # boot_pdpt_low, PML4[511] (-512GiB..0) -> boot_pdpt_high.
     mov $(boot_pdpt_low + PTE_PRESENT + PTE_WRITABLE), %eax
     mov %eax, boot_pml4
+    mov %eax, boot_pml4 + 256 * 8
     mov $(boot_pdpt_high + PTE_PRESENT + PTE_WRITABLE), %eax
     mov %eax, boot_pml4 + 511 * 8
-    # PDPT_low[0] (0..1GiB) and PDPT_high[510] (-2GiB..-1GiB) -> boot_pd.
+    # PDPT_low[0] (0..1GiB, and PHYS_MAP_OFFSET..+1GiB) and PDPT_high[510]
+    # (-2GiB..-1GiB) -> boot_pd.
     mov $(boot_pd + PTE_PRESENT + PTE_WRITABLE), %eax
     mov %eax, boot_pdpt_low
     mov %eax, boot_pdpt_high + 510 * 8
@@ -282,6 +289,9 @@ higher_half_entry:
 
 .section .bss.kernel_stack, "aw", @nobits
 .balign 16
+# The TSS also uses this as the stack for interrupts from user mode (rsp0),
+# until there are threads.
+.global kernel_stack_top
 kernel_stack_bottom:
     .skip KERNEL_STACK_SIZE
 kernel_stack_top:
