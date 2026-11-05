@@ -1,5 +1,5 @@
 {
     "rust-analyzer.cargo.target": "i686-unknown-linux-gnu",
-    "rust-analyzer.cargo.targetDir": "build/target",
+    "rust-analyzer.cargo.targetDir": "build/rust-analyzer",
     "rust-analyzer.check.command": "clippy"
 }

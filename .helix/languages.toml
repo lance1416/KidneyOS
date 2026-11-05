@@ -5,4 +5,4 @@ file-types = ["s", "S"]
 [language-server.rust-analyzer.config]
 cargo.target = "i686-unknown-linux-gnu"
 check.command = "clippy"
-cargo.targetDir = "build/target"
+cargo.targetDir = "build/rust-analyzer"
