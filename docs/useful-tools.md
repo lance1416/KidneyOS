@@ -24,7 +24,7 @@ Then, run the following from the root of the KidneyOS repository. (If you built 
 rust-gdb
 ```
 
-This will start GDB. After you hit the enter key once, GDB should attach to QEMU and resume execution of the OS until it reaches the `_start` function defined in `trampoline/src/lib.rs`. From this point onwards, you should be able to use GDB as usual.
+This will start GDB. After you hit the enter key once, GDB should attach to QEMU and resume execution of the OS until it reaches the kernel's `kmain` function (in `kernel/src/arch/x86_64/kmain.rs`). From this point onwards, you should be able to use GDB as usual. Use hardware breakpoints (`hbreak`) for anything before that, since GRUB only loads the kernel into memory after GDB has connected. The `.gdbinit` file also explains how to step through the 32-bit boot stub (`_start`), which runs before the CPU is in 64-bit mode.
 
 ## Bochs
 
@@ -34,7 +34,7 @@ This will start GDB. After you hit the enter key once, GDB should attach to QEMU
 - You can dump sections of memory based on either physical or linear addresses.
 - It has windows for viewing the contents of the global and interrupt descriptor tables, and the memory page tables.
 
-You can run KidneyOS with Bochs by running:
+KidneyOS is a 64-bit kernel, so Bochs must be built with x86-64 support (`./configure --enable-x86-64`); `bochsrc.txt` selects a CPU model with the features KidneyOS needs. You can run KidneyOS with Bochs by running:
 
 ```sh
 make run-bochs

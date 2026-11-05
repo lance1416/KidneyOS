@@ -58,10 +58,10 @@ all of it.
 
 ## Layout
 
-- `kernel/`, `shared/`, `trampoline/`, `syscalls/`: the kernel's cargo
-  workspace (root `Cargo.toml`), built for `build-support/i686-unknown-kernel.json`.
+- `kernel/`, `shared/`, `syscalls/`: the kernel's cargo workspace (root
+  `Cargo.toml`); the kernel is built for `x86_64-unknown-none`.
 - `programs/`: user programs. The Rust ones are a separate cargo workspace
-  (`programs/Cargo.toml`) built for `i586-unknown-linux-gnu`; the C and
+  (`programs/Cargo.toml`) built for `x86_64-unknown-linux-gnu`; the C and
   assembly ones are built by `programs.mk`. Everything ends up in
   `build/programs/`.
 - `build/`: all build outputs, including `build/disk.img`, the disk QEMU and

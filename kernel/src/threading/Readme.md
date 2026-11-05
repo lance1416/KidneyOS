@@ -30,7 +30,7 @@ A new thread can be created via the [`ThreadControlBlock::new`](./thread_control
 This will go through the process of allocating a stack for the thread and preparing the initial stack frames.
 A thread created from this function will be ready to be handed to the scheduler or run via the `switch_threads` method.
 
-Stacks are allocated as a predetermined size (1MB).
+Kernel stacks are allocated as a predetermined size (`KERNEL_THREAD_STACK_FRAMES` pages, 16KiB).
 
 The stack frames required to get a thread running are opaque to the user.
 For developers, the details are below.
@@ -53,34 +53,34 @@ The [kernel thread](#the-kernel-thread) is an exception to this.
 A brand new thread has two different stack frames allocated in the following order (bottom of stack to top):
 
 * `PrepareThreadContext`.
-    This is a stack frame that performs some cleanup of arguments to facilitate the next stack frame.
+    This holds the thread's entry function, where `prepare_thread` would find its return address.
+    It also keeps the stack pointer 16-byte aligned, as the System V ABI requires at a call.
 * `SwitchThreadsContext`.
-    This used within the `context_switch` function to store this threads state.
-    Upon creation, this will delegate the thread to run the next stack frame.
+    This is used within the `context_switch` function to store this threads state.
+    Upon creation, `context_switch` "returns" from it into `prepare_thread`, which calls `run_thread`.
 
 The full stack will look like:
 
 ```
-+-----------------------+ Bottom (High Address)
-| &run_thread           | PrepareThreadContext
++-----------------------+ Bottom (High Address, 16-byte aligned)
+| entry function        | PrepareThreadContext
 | --------------------- |
-| eip = &prepare_thread | SwitchThreadsContext
-| ebp = 0               |
-| ebx = 0               |
-| esi = 0               |
-| edi = 0               |
-+-----------------------+ Top (Low Address)
+| rip = &prepare_thread | SwitchThreadsContext
+| rbp = 0               |
+| rbx = 0               |
+| r12 = 0               |
+| r13 = 0               |
+| r14 = 0               |
+| r15 = 0               |
++-----------------------+ Top (Low Address, 16-byte aligned)
 ```
 
-More details on the internals of these stack frames can be found within code comments.
+More details on the internals of these stack frames can be found within code comments (`kernel/src/arch/x86_64/context.rs`).
 
 ### Notes on Argument Types
 
 The actual function to perform context switch (`context_switch`) takes in pointers to TCB's as arguments.
-We must have that the address of the TCB is the same address as the stack pointer contained within the TCB.
-That is, `&TCB == &TCB.stack_pointer`.
-Thus, the TCB struct must be a C struct.
-This disallows reordering of fields within the struct and mimics the alignment we would see within C structs.
+It finds the stack pointer within each TCB at `offset_of!(ThreadControlBlock, kernel_stack_pointer)`, so the layout of the TCB doesn't matter.
 
 The context switch function must retain the TCB pointers in order for the `prepare_thread` and `run_thread` function to properly schedule our threads.
 However, internally, the context switch function must derefence these pointers to actually find the address of the stack.
@@ -136,15 +136,13 @@ Rather, you use one of the scheduling functions provided in the mod file for the
 
 Context switching requires us to save the executing thread's state onto it's stack, switch to the new threads stack, and restore the new thread's state.
 Luckily, the state we are required to save within the context switch is small (see notes on [calling conventions](#calling-conventions)).
-Within [`context_switch.rs`](./context_switch.rs) you may find several small blocks of assembly that accomplish this task (such low level manipulation is impossible with Rust directly).
-Each should be fairly self explanatory:
+`context_switch` (in [`kernel/src/arch/x86_64/context.rs`](../arch/x86_64/context.rs)) is a short naked function written in assembly (such low level manipulation is impossible with Rust directly), which:
 
-* `save_registers` has the job of placing the `$ebp, $ebx, $esi,` and `$edi` registers onto the current stack.
-    As well, it moves value of the stack pointer (`$esp`) into `$ebp` to aide in finding arguments on the stack.
-* `load_arguments` simply takes arguments off of well-known stack positions and places them into free registers.
-* `switch_stacks` places the current stack pointer into the TCB for the currently executing thread before updating the stack pointer to that of the to-execute thread.
-* `restore_registers` is just the reversal of `save_registers`.
-    Notably, this is now moving values from the new stack.
+* pushes the callee-saved registers (`rbp`, `rbx` and `r12` to `r15`) onto the current stack, below the return address the call pushed;
+* places the current stack pointer into the TCB for the currently executing thread (the first argument, in `rdi`) before loading the stack pointer of the to-execute thread (the second argument, in `rsi`);
+* pops the callee-saved registers from the new stack, and returns to where the new thread called `context_switch` (or, for a new thread, into `prepare_thread`), returning the TCB we switched from in `rax`.
+
+The floating-point and SSE registers of user programs (the kernel doesn't use them) are switched separately, with `fxsave` and `fxrstor`, see `switch_fpu`.
 
 The arguments provided to `context_switch` must be raw pointers to the TCB's that we wish to switch from and to.
 See [Notes on Argument Types](#notes-on-argument-types) for information about these pointers.
@@ -159,21 +157,20 @@ Rust provides the ability to specify different ABI's for a given function.
 This allows us to have a known calling convention where needed and prevent the compiler from changing this in the future.
 We use the well known C convention requiring us to mark any function that we interact with through assembly to be marked `extern "C"`.
 This enforces the Rust compiler to call into this function as if it were a C function.
-[This chapter](https://aaronbloomfield.github.io/pdr/book/x86-32bit-ccc-chapter.pdf) of Aaron Bloomfield's book was used as a reference for the C calling convention.
-Information about the specific registers can be found in [this document](https://www.eecg.utoronto.ca/~amza/www.mindsec.com/files/x86regs.html).
+On x86_64, that is the [System V AMD64 ABI](https://gitlab.com/x86-psABIs/x86-64-ABI).
 
 Briefly, the concern of our functions are:
 
-* Before a function is called, the arguments are pushed onto the stack in reverse order (`foo(x, y, z)` is pushed as `z, y, x`).
-* The `$eax, $ecx,` and `$edx` registers are saved by the caller and thus free for us to use.
-* The callee must push `$ebp, $ebx, $esi,` and `$edi` onto the stack.
-    * These must be restored on the return.
-* Space for local variables can be allocated by decrementing the stack pointer (currently not needed for us).
-* Return values are placed in `$eax` before returning and the stack must be returned to the same position as it was in entry.
+* The first six integer or pointer arguments are passed in `rdi`, `rsi`, `rdx`, `rcx`, `r8` and `r9` (`foo(x, y)` gets `x` in `rdi` and `y` in `rsi`); further ones on the stack.
+* `rax`, `rcx`, `rdx`, `rsi`, `rdi` and `r8` to `r11` are saved by the caller (if it needs them) and thus free for us to use.
+* The callee must preserve `rbx`, `rbp` and `r12` to `r15`.
+    * `context_switch` saves them on the stack of the thread it switches from, and restores them from the stack of the thread it switches to.
+* The stack pointer must be 16-byte aligned at a `call` instruction, so a function starts with it 8 bytes off (because of the return address).
+* Return values are placed in `rax` before returning.
 
 It is obvious that we must declare `context_switch` and `prepare_thread` as `extern "C"` since they directly use the above assumptions.
 However, `run_thread` must also be declared `extern "C"` despite being pure Rust.
-This is because we must inform the compiler that this function is called by a C function (`prepare_thread`) so it knows how to access it's arguments.
+This is because we must inform the compiler that this function is called from assembly (`prepare_thread`, which passes on `context_switch`'s arguments in `rdi` and `rsi`) so it knows where to find it's arguments.
 Similarily, our `entry_function` for a thread must be `extern "C"` since we wish to be able to run any C program within this OS.
 
 _Note:_ `prepare_thread` is not a 'real' function and must not be returned into.

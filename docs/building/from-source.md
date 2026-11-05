@@ -37,9 +37,9 @@ Running `cargo --version` should now print:
 cargo 1.101.0-nightly (31d3246e0 2026-10-27)
 ```
 
-## Install `i686-unknown-linux` Build Tools
+## Install x86-64 Linux Build Tools
 
-A non-exhaustive list of the binaries you'll need to install includes `i686-unknown-linux-gnu-ld` and `i686-unknown-linux-gnu-objcopy`. Some package managers may have a package for these. If yours doesn't, you may have to build them from source. Admittedly, this section is quite light on details, since the process is highly platform-specific. This may be updated with more details in the future. <!-- TODO: Provide more detailed instructions on how to do this, or a link to somewhere which does? -->
+The user programs are built as x86-64 Linux programs, with `gcc`, `as` and `ld` (GNU binutils) for x86-64. On an `x86_64-linux` host, those are the native ones, which your distribution's `gcc` and `binutils` packages provide. On other hosts, you need a cross toolchain whose tools are prefixed with `x86_64-unknown-linux-gnu-` (e.g. `x86_64-unknown-linux-gnu-gcc`), and to point Cargo at it with `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-unknown-linux-gnu-gcc`; set `CROSS_PREFIX` in a `local.mk` file in the root of the repository if your toolchain's prefix is different. Some package managers may have a package for these. If yours doesn't, you may have to build them from source. <!-- TODO: Provide more detailed instructions on how to do this, or a link to somewhere which does? -->
 
 ## Install Other Tools
 
@@ -47,8 +47,8 @@ We'll also need to install the following packages:
 
 - [`grub`](https://repology.org/project/grub/versions)
   - Make sure it's Grub 2.
-  - If you're on `aarch64-linux`, you'll need to make sure you have the right libraries to build `i386-pc` ISOs. This will be highly distro-specific specific. You may have to build Grub from source.
+  - KidneyOS boots from the BIOS, which GRUB supports with its 32-bit `i386-pc` platform (it then switches to 64-bit mode itself), so you need GRUB's `i386-pc` modules to build the ISO. On `x86_64-linux`, the usual GRUB package has them. If you're on `aarch64-linux`, this will be highly distro-specific. You may have to build Grub from source.
 - [`qemu`](https://repology.org/project/qemu/versions)
 - [`xorriso`](https://repology.org/project/xorriso/versions)
 - [`bochs`](https://repology.org/project/bochs/versions)
-  - Optional, but recommended as it is useful for debugging. See the corresponding ["Useful Tools" section](../useful-tools.md#bochs) for more information.
+  - Optional, but recommended as it is useful for debugging. It must be built with x86-64 support. See the corresponding ["Useful Tools" section](../useful-tools.md#bochs) for more information.

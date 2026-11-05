@@ -18,7 +18,7 @@ Once you have a build environment ready, simply run:
 make
 ```
 
-...from within your build environment, at the root of the KidneyOS repository. This will compile the various pieces of KidneyOS, and produce an ISO at `build/i686/kidneyos.iso`.
+...from within your build environment, at the root of the KidneyOS repository. This will compile the various pieces of KidneyOS, and produce an ISO at `build/kidneyos.iso`.
 
 ## Running KidneyOS
 
@@ -33,18 +33,10 @@ There are two things to note here:
 1. If you're building KidneyOS with Docker, this command should be run on the host system, not in the container build environment.
 2. If you're building KidneyOS with any of the other methods, you don't have to run `make` first after modifying the source code. `make run-qemu` will also automatically rebuild the ISO if any of the KidneyOS source files have changed.
 
-## Building for x86_64
+## Testing
 
-KidneyOS is being ported from i686 to x86_64. i686 is still the default; to build and run the x86_64 kernel instead, add `ARCH=x86_64` to any of the commands above:
+`make test` runs the unit tests, as x86-64 Linux programs (so only on x86-64 Linux, natively, or with QEMU's user-mode emulation in the Nix devshell on `aarch64-linux`).
 
-```sh
-make ARCH=x86_64 run-qemu-ng
-```
+`make smoke-test` boots KidneyOS in QEMU and checks that it reads the disk, mounts the root file system, preempts threads, runs its init program (pipes) successfully, and gets to the shell prompt. `make smoke-programs` boots once for each of the other test programs (bss, execve, waitpid, syscall_abi, and two sse processes at once), and checks their results. To boot with other programs, set `KIDNEYOS_INIT` to their names, separated by commas: for example, `make run-qemu-ng KIDNEYOS_INIT=bss`.
 
-Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`), and the user programs are built for x86_64 too (into `build/programs/x86_64-unknown-linux-gnu/` and `build/programs/bin-x86_64/`). The x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, and then runs the same kernel as on i686, including user programs.
-
-`make smoke-test` checks that KidneyOS boots, runs its init program (pipes) successfully, and gets to the shell prompt; with `ARCH=x86_64`, it also checks that the timer preempts threads. `make smoke-programs` boots once for each of the other test programs (bss, execve, waitpid, syscall_abi, and on x86_64 two sse processes at once), and checks their results. To boot with other programs, set `KIDNEYOS_INIT` to their names, separated by commas: for example, `make run-qemu-ng KIDNEYOS_INIT=bss`.
-
-`make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
-
-`make test` runs the tests on both architectures (`make test-i686` and `make test-x86_64` run them on one).
+`make KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
