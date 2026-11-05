@@ -91,6 +91,11 @@ pub unsafe fn outsw(port: u16, buffer: *const u8, count: usize) {
 }
 
 impl SerialWriter {
+    /// Initializes the serial port (COM1) now rather than on the first write.
+    pub fn init(&mut self) {
+        self.ensure_initialized();
+    }
+
     fn ensure_initialized(&mut self) {
         if self.initialized {
             return;
