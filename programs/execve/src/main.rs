@@ -5,13 +5,18 @@ use core::ffi::c_char;
 use kidneyos_syscalls::O_CREATE;
 
 // Built first by programs.mk (see the execve rule there).
+#[cfg(target_arch = "x86")]
 const TARGET_PROGRAM: &[u8] =
     include_bytes!("../../../build/programs/i586-unknown-linux-gnu/release/example_rust");
+#[cfg(target_arch = "x86_64")]
+const TARGET_PROGRAM: &[u8] =
+    include_bytes!("../../../build/programs/x86_64-unknown-linux-gnu/release/example_rust");
 
 const TARGET_PATH: *const c_char = c"/example_rust".as_ptr();
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+kidneyos_syscalls::entry_point!(main);
+
+extern "C" fn main() -> ! {
     // TempFS - We'll create the file that we want to execute on the fly.
     let fd = kidneyos_syscalls::open(TARGET_PATH, O_CREATE);
 

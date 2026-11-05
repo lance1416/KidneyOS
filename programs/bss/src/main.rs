@@ -11,8 +11,9 @@ const LEN: usize = 3 * 4096;
 
 static mut BSS: [u8; LEN] = [0; LEN];
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+kidneyos_syscalls::entry_point!(main);
+
+extern "C" fn main() -> ! {
     let bss = addr_of_mut!(BSS).cast::<u8>();
     let mut code = 0;
 

@@ -3,8 +3,9 @@
 
 use kidneyos_syscalls::EPIPE;
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+kidneyos_syscalls::entry_point!(main);
+
+extern "C" fn main() -> ! {
     let mut pipes = [0, 0];
 
     kidneyos_syscalls::pipe(pipes.as_mut_ptr());

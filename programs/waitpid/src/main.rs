@@ -7,8 +7,9 @@ fn wexitstatus(status: i32) -> i32 {
     (status >> 8) & 0xff
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+kidneyos_syscalls::entry_point!(main);
+
+extern "C" fn main() -> ! {
     let mut status: i32 = 0;
     // Currently hard coding the wait process for testing. Waiting on a child
     // of its own (the commented-out code below) needs fork, which the kernel

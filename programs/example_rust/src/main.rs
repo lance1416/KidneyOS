@@ -1,8 +1,9 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
 
-#[unsafe(no_mangle)]
-pub extern "C" fn _start() -> ! {
+kidneyos_syscalls::entry_point!(main);
+
+extern "C" fn main() -> ! {
     kidneyos_syscalls::exit(1);
 
     // exit() doesn't return.

@@ -13,3 +13,13 @@ target-dir = "../build/programs"
 [target.i586-unknown-linux-gnu]
 linker = "i686-unknown-linux-gnu-cc"
 rustflags = ["-C", "link-args=-e _start -static -nostartfiles"]
+
+# With ARCH=x86_64, the programs are built for the standard x86_64 target (see
+# programs.mk), whose linker is the default cc on x86_64 hosts; elsewhere the
+# Nix devShell sets CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER. KidneyOS loads
+# programs at the addresses they're linked at, so they mustn't be PIE.
+[target.x86_64-unknown-linux-gnu]
+rustflags = [
+  "-C", "relocation-model=static",
+  "-C", "link-args=-e _start -static -nostartfiles -no-pie",
+]
