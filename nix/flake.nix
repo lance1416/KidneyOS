@@ -107,6 +107,7 @@
             actionlint
             bochs
             gdb
+            git
             gnumake
             grcov
             gzip
@@ -149,6 +150,8 @@
           build = mkShell {
             packages = [
               actionlint
+              # scripts/check-mdsh.bash and CI's generated-files check use git.
+              git
               gnumake
               grcov
               grub2
