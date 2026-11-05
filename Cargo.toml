@@ -1,5 +1,5 @@
 [workspace]
-members = ["kernel", "shared", "syscalls", "trampoline"]
+members = ["kernel", "shared", "syscalls"]
 # User programs are a separate workspace, built for a different target.
 exclude = ["programs"]
 resolver = "3"

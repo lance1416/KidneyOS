@@ -1,25 +1,19 @@
 [build]
-target = "i686-unknown-linux-gnu"
+# Used for host-side checks (clippy, tests), which run as ordinary Linux
+# programs. The kernel is built for x86_64-unknown-none (see the Makefile), and
+# the user programs for x86_64-unknown-linux-gnu with their own settings (see
+# programs/.cargo/config.toml).
+target = "x86_64-unknown-linux-gnu"
 
-# Used for host-side checks (clippy, tests). Code that actually runs on
-# KidneyOS doesn't use this target: the kernel uses
-# build-support/i686-unknown-kernel.json and user programs use
-# i586-unknown-linux-gnu (see programs/.cargo/config.toml), neither of which
-# use SSE. No rustflags are needed here; the test binaries are ordinary Linux
-# programs, run with qemu-i386.
-[target.i686-unknown-linux-gnu]
-linker = "i686-unknown-linux-gnu-cc"
-
-# The x86_64 kernel (`make ARCH=x86_64`). The built-in target defaults to a
-# static PIE; the kernel is linked at a fixed address (build-support/x86_64.ld),
-# so it uses the static relocation model. Frame pointers are kept for
-# backtraces, like in build-support/i686-unknown-kernel.json.
+# The kernel. The built-in target defaults to a static PIE; the kernel is
+# linked at a fixed address (build-support/x86_64.ld), so it uses the static
+# relocation model. Frame pointers are kept for backtraces.
 [target.x86_64-unknown-none]
 rustflags = ["-C", "relocation-model=static", "-C", "force-frame-pointers=yes"]
 
 [alias]
-# Lint the kernel workspace like `make clippy` does (the user programs need
-# `make clippy`, since they're a separate workspace).
-lint = "clippy --target i686-unknown-linux-gnu --workspace -- -D warnings"
+# Lint the kernel like `make clippy` does (the syscall stubs and the user
+# programs need `make clippy`).
+lint = "clippy --target x86_64-unknown-none --package kidneyos --package kidneyos-shared -- -D warnings"
 # Run the tests without coverage instrumentation (`make test` adds it).
-t = "test --target i686-unknown-linux-gnu --workspace"
+t = "test --target x86_64-unknown-linux-gnu --workspace --exclude kidneyos-syscalls"

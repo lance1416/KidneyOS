@@ -1,5 +1,3 @@
 [build]
-# Built for C user programs (see syscalls.mk). i586 is used instead of i686
-# since i686-unknown-linux-gnu requires SSE2, which KidneyOS doesn't enable for
-# user programs.
-target = "i586-unknown-linux-gnu"
+# Built for C user programs (see syscalls.mk).
+target = "x86_64-unknown-linux-gnu"

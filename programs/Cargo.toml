@@ -1,10 +1,9 @@
 # User programs that run on KidneyOS. This is a separate workspace from the
 # kernel's (see the root Cargo.toml) because it is built for a different target,
-# i586-unknown-linux-gnu, configured in programs/.cargo/config.toml.
+# x86_64-unknown-linux-gnu, configured in programs/.cargo/config.toml.
 #
 # Build with `make programs` from the repository root. Binaries end up in
-# build/programs/i586-unknown-linux-gnu/release/ (and with ARCH=x86_64, built for
-# x86_64-unknown-linux-gnu, in build/programs/x86_64-unknown-linux-gnu/release/).
+# build/programs/x86_64-unknown-linux-gnu/release/.
 [workspace]
 members = ["bss", "example_rust", "execve", "pipes", "sse", "waitpid"]
 resolver = "3"

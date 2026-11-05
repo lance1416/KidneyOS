@@ -1,5 +1,6 @@
 .intel_syntax noprefix
 
+# The smallest program: exits with 0.
 .global _start
 _start:
         # Execute the bochs break instruction so we know we made it here...
@@ -7,7 +8,7 @@ _start:
         # ...then immediately execute KidneyOS's exit syscall, passing an exit
         # code of 0 to indicate success.
         mov eax, 0x1
-        mov ebx, 0x0
+        xor edi, edi
         int 0x80
 
         # Hang if we make it back.

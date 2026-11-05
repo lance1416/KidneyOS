@@ -1,5 +1,5 @@
 /*
- * Linker script for the x86_64 kernel (`make ARCH=x86_64`).
+ * Linker script for the kernel.
  *
  * GRUB loads every segment at its physical (load) address and jumps to the
  * entry point in 32-bit protected mode with paging off, so the multiboot2

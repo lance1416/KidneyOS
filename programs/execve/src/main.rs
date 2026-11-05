@@ -5,10 +5,6 @@ use core::ffi::c_char;
 use kidneyos_syscalls::O_CREATE;
 
 // Built first by programs.mk (see the execve rule there).
-#[cfg(target_arch = "x86")]
-const TARGET_PROGRAM: &[u8] =
-    include_bytes!("../../../build/programs/i586-unknown-linux-gnu/release/example_rust");
-#[cfg(target_arch = "x86_64")]
 const TARGET_PROGRAM: &[u8] =
     include_bytes!("../../../build/programs/x86_64-unknown-linux-gnu/release/example_rust");
 

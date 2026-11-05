@@ -1,8 +1,7 @@
 # Builds the syscall stub library that the C user programs link against.
 # Included by programs.mk, which sets PROJECT_DIR (no trailing slash).
 
-# Built for PROGRAMS_TRIPLE (see programs.mk).
-SYSCALL_LIB := $(PROJECT_DIR)/build/syscalls/$(PROGRAMS_TRIPLE)/libkidneyos_syscalls.rlib
+SYSCALL_LIB := $(PROJECT_DIR)/build/syscalls/libkidneyos_syscalls.rlib
 SYSCALL_INCLUDE := $(PROJECT_DIR)/syscalls/include
 SYSCALL_SOURCES := $(addprefix $(PROJECT_DIR)/syscalls/,Cargo.toml build.rs bindgen.toml) \
 	$(wildcard $(PROJECT_DIR)/syscalls/src/*.rs)
@@ -13,8 +12,7 @@ SYSCALL_SOURCES := $(addprefix $(PROJECT_DIR)/syscalls/,Cargo.toml build.rs bind
 # built in debug mode so they don't get inlined.
 $(SYSCALL_LIB): $(SYSCALL_SOURCES)
 	mkdir -p $(dir $@)
-	cd $(PROJECT_DIR)/syscalls && cargo build --target $(PROGRAMS_TRIPLE) \
-	  --message-format=json-render-diagnostics > $@.json
+	cd $(PROJECT_DIR)/syscalls && cargo build --message-format=json-render-diagnostics > $@.json
 	cp "$$(grep -o '"[^"]*/libkidneyos_syscalls-[^"]*\.rlib"' $@.json | head -n 1 | tr -d '"')" $@
 	rm -f $@.json
 

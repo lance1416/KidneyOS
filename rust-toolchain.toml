@@ -2,21 +2,17 @@
 # NOTE: If the channel is changed, update the `cargo --version` output shown in
 # docs/building/from-source.md.
 # nightly-2026-11-01 (rustc 1.101.0-nightly f9ceb4a4d 2026-10-31) was picked as a
-# recent nightly that builds KidneyOS cleanly (kernel via -Z build-std with the
-# custom i686-unknown-kernel target, programs, tests, clippy, rustfmt) and has
-# all of the components below available on x86_64/aarch64 Linux and macOS.
-# Nightly is still required for -Z build-std and the remaining unstable library
-# features (negative_impls, slice_ptr_get, and btreemap_alloc in tests).
-# i586-unknown-linux-gnu is used for user programs, see programs/.cargo/config.toml.
-# x86_64-unknown-none is the target of the x86_64 kernel (`make ARCH=x86_64`),
-# which uses its prebuilt core and alloc instead of -Z build-std, and
-# x86_64-unknown-linux-gnu is used to test it on the host (`make test-x86_64`).
+# recent nightly that builds KidneyOS cleanly (kernel, programs, tests, clippy,
+# rustfmt) and has all of the components below available on x86_64/aarch64
+# Linux and macOS. Nightly is still required for unstable features:
+# negative_impls (the kernel's lock guards are !Send), and btreemap_alloc in the
+# tests.
+# - x86_64-unknown-none: the kernel, with the prebuilt core and alloc.
+# - x86_64-unknown-linux-gnu: the user programs (see programs/.cargo/config.toml)
+#   and the host tests.
+# llvm-tools-preview provides llvm-objcopy (for the kernel image) and what grcov
+# needs; rust-src is for rust-analyzer.
 channel = "nightly-2026-11-01"
 components = ["clippy", "llvm-tools-preview", "rustfmt", "rust-analyzer", "rust-src"]
-targets = [
-  "i686-unknown-linux-gnu",
-  "i586-unknown-linux-gnu",
-  "x86_64-unknown-none",
-  "x86_64-unknown-linux-gnu",
-]
+targets = ["x86_64-unknown-none", "x86_64-unknown-linux-gnu"]
 profile = "minimal"
