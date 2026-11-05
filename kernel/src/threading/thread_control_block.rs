@@ -393,6 +393,12 @@ impl ThreadControlBlock {
         }
     }
 
+    /// The initial (highest) address of this thread's kernel stack.
+    pub fn kernel_stack_top(&self) -> NonNull<u8> {
+        // SAFETY: `map_stacks` allocated KERNEL_THREAD_STACK_SIZE bytes at `kernel_stack`.
+        unsafe { self.kernel_stack.add(KERNEL_THREAD_STACK_SIZE) }
+    }
+
     pub fn set_exit_code(&mut self, exit_code: i32) {
         self.exit_code = Some(exit_code);
     }

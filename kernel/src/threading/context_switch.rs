@@ -3,6 +3,7 @@ use crate::{
     threading::thread_functions::clean_up_thread,
 };
 use core::mem::offset_of;
+use kidneyos_shared::task_state_segment::TASK_STATE_SEGMENT;
 
 use super::thread_control_block::{ThreadControlBlock, ThreadStatus};
 use crate::system::unwrap_system;
@@ -48,6 +49,14 @@ pub unsafe fn switch_threads(
 
         let page_manager = &(*switch_to).page_manager;
         page_manager.load();
+
+        // Interrupts taken in user mode switch to the stack in the TSS, so it
+        // must point at the top of the kernel stack of the thread we resume,
+        // whether it runs for the first time or not. Kernel threads never
+        // leave ring 0, so the TSS isn't used for them.
+        if !(*switch_to).is_kernel {
+            TASK_STATE_SEGMENT.esp0 = (*switch_to).kernel_stack_top().as_ptr() as u32;
+        }
 
         let previous = Box::from_raw(context_switch(switch_from, switch_to));
 

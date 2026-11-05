@@ -7,10 +7,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use core::arch::asm;
-use kidneyos_shared::{
-    global_descriptor_table::{USER_CODE_SELECTOR, USER_DATA_SELECTOR},
-    task_state_segment::TASK_STATE_SEGMENT,
-};
+use kidneyos_shared::global_descriptor_table::{USER_CODE_SELECTOR, USER_DATA_SELECTOR};
 
 /// TODO: Thread arguments: Usually a void ptr, but Rust won't like that...
 /// No arguments allowed for now.
@@ -74,8 +71,6 @@ unsafe extern "C" fn run_thread(
         // We assume that switched_from had its status changed already.
         // We must only mark this thread as running.
         switched_to.status = ThreadStatus::Running;
-
-        TASK_STATE_SEGMENT.esp0 = switched_to.kernel_stack.as_ptr() as u32;
 
         let ThreadControlBlock {
             eip,
