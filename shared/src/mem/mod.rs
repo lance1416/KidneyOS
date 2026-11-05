@@ -5,8 +5,17 @@ use crate::sizes::{KB, MB};
 
 // Page size is 4KB. This is a property of x86 processors.
 pub const PAGE_FRAME_SIZE: usize = 4 * KB;
+#[cfg(target_arch = "x86")]
 pub const HUGE_PAGE_SIZE: usize = 4 * MB;
+#[cfg(target_arch = "x86_64")]
+pub const HUGE_PAGE_SIZE: usize = 2 * MB;
 
+// The `phys` and `virt` linker symbols, `PHYS_MAP_OFFSET` and `USER_TOP` are
+// i686 only so far. On x86_64 the layout is only what
+// build-support/x86_64.ld and kernel/src/arch/x86_64/boot.s set up: the image
+// and physical 0..1GiB at `KERNEL_BASE`, with no direct map or user space yet.
+
+#[cfg(target_arch = "x86")]
 macro_rules! linker_offsets {
     ($($name:ident),*) => {
         $(
@@ -23,6 +32,7 @@ macro_rules! linker_offsets {
     }
 }
 
+#[cfg(target_arch = "x86")]
 pub mod phys {
     linker_offsets!(trampoline_start, trampoline_data_start, trampoline_end);
 
@@ -50,6 +60,7 @@ pub mod phys {
     }
 }
 
+#[cfg(target_arch = "x86")]
 pub mod virt {
     linker_offsets!(kernel_start, kernel_data_start, kernel_end);
 
@@ -76,15 +87,25 @@ pub mod virt {
 /// Virtual address that physical address 0 of the kernel image is linked at:
 /// the image (loaded at its physical address by the bootloader) lives at
 /// `phys + KERNEL_BASE`. Must match `KERNEL_BASE` in `build-support/i686.ld`.
+#[cfg(target_arch = "x86")]
 pub const KERNEL_BASE: usize = 0x8000_0000;
+
+/// On x86_64 the kernel image is linked in the top 2GiB of the address space
+/// (as required by the kernel code model), and the boot stub maps physical
+/// `0..1GiB` there, so physical address `p < 1GiB` is also accessible at
+/// `p + KERNEL_BASE`. Must match `KERNEL_BASE` in `build-support/x86_64.ld`.
+#[cfg(target_arch = "x86_64")]
+pub const KERNEL_BASE: usize = 0xFFFF_FFFF_8000_0000;
 
 /// Virtual address of the start of the direct map of physical memory: the
 /// physical address `p` is accessible at `p + PHYS_MAP_OFFSET`. Memory handed
 /// out by the frame and kernel allocators is addressed through it.
+#[cfg(target_arch = "x86")]
 pub const PHYS_MAP_OFFSET: usize = 0x8000_0000;
 
 /// Exclusive upper bound of user virtual addresses. Any virtual address at or
 /// above it is a kernel address.
+#[cfg(target_arch = "x86")]
 pub const USER_TOP: usize = 0x8000_0000;
 
 // TODO: Figure out how to detect kernel stack overflows.

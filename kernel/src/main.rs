@@ -1,41 +1,61 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
-#![feature(negative_impls)]
+#![cfg_attr(target_arch = "x86", feature(negative_impls))]
 // Only used by the buddy allocator tests.
 #![cfg_attr(test, feature(btreemap_alloc, slice_ptr_get))]
 
+// While KidneyOS is being ported to x86_64, only `arch` is built for it: its
+// `x86_64` module has its own entry point (`kmain`), and everything else is
+// still i686 only.
 mod arch;
+#[cfg(target_arch = "x86")]
 mod block;
+#[cfg(target_arch = "x86")]
 mod drivers;
+#[cfg(target_arch = "x86")]
 pub mod fs;
+#[cfg(target_arch = "x86")]
 mod interrupts;
+#[cfg(target_arch = "x86")]
 pub mod mem;
+#[cfg(target_arch = "x86")]
 mod paging;
+#[cfg(target_arch = "x86")]
 mod rush;
+#[cfg(target_arch = "x86")]
 pub mod sync;
+#[cfg(target_arch = "x86")]
 mod system;
+#[cfg(target_arch = "x86")]
 mod threading;
+#[cfg(target_arch = "x86")]
 mod user_program;
+#[cfg(target_arch = "x86")]
 pub mod vfs;
 
+#[cfg(target_arch = "x86")]
 extern crate alloc;
 
-use crate::block::block_core::BlockManager;
-use crate::drivers::ata::ata_core::ide_init;
-use crate::drivers::input::input_core::InputBuffer;
-use crate::fs::fs_manager::RootFileSystem;
-use crate::sync::mutex::Mutex;
-use crate::sync::rwlock::sleep::RwLock;
-use crate::system::SystemState;
-use crate::threading::process::create_process_state;
-use crate::threading::thread_control_block::ThreadControlBlock;
-use alloc::boxed::Box;
-use interrupts::pic;
-use kidneyos_shared::{global_descriptor_table, println, video_memory::video_memory_writer};
-use mem::KernelAllocator;
-use threading::{create_thread_state, thread_system_start};
-use vfs::tempfs::TempFS;
+#[cfg(target_arch = "x86")]
+use {
+    crate::block::block_core::BlockManager,
+    crate::drivers::ata::ata_core::ide_init,
+    crate::drivers::input::input_core::InputBuffer,
+    crate::fs::fs_manager::RootFileSystem,
+    crate::sync::mutex::Mutex,
+    crate::sync::rwlock::sleep::RwLock,
+    crate::system::SystemState,
+    crate::threading::process::create_process_state,
+    crate::threading::thread_control_block::ThreadControlBlock,
+    alloc::boxed::Box,
+    interrupts::pic,
+    kidneyos_shared::{global_descriptor_table, println, video_memory::video_memory_writer},
+    mem::KernelAllocator,
+    threading::{create_thread_state, thread_system_start},
+    vfs::tempfs::TempFS,
+};
 
+#[cfg(target_arch = "x86")]
 #[cfg_attr(not(test), global_allocator)]
 static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 
@@ -46,22 +66,25 @@ static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 /// The caller must ensure that nothing else (including the global allocator
 /// interface, e.g. from an interrupt handler) uses the allocator while the
 /// returned reference is in use.
+#[cfg(target_arch = "x86")]
 pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
     let ptr = &raw mut KERNEL_ALLOCATOR;
     // SAFETY: Exclusive access is guaranteed by the caller.
     unsafe { &mut *ptr }
 }
 
-#[cfg(not(test))]
+#[cfg(all(target_arch = "x86", not(test)))]
 #[panic_handler]
 fn panic(args: &core::panic::PanicInfo) -> ! {
     kidneyos_shared::eprintln!("{}", args);
     loop {}
 }
 
+#[cfg(target_arch = "x86")]
 const INIT: &[u8] =
     include_bytes!("../../build/programs/i586-unknown-linux-gnu/release/pipes").as_slice();
 
+#[cfg(target_arch = "x86")]
 #[cfg_attr(not(test), unsafe(no_mangle))]
 extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lines: usize) -> ! {
     unsafe {

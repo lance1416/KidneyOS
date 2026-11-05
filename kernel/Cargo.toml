@@ -5,6 +5,11 @@ edition.workspace = true
 
 [dependencies]
 kidneyos-shared.workspace = true
+
+# Only the i686 kernel uses these so far: the x86_64 one only boots (see
+# src/arch/x86_64). The syscall stubs also use the i686 int 0x80 register ABI,
+# which doesn't build for x86_64.
+[target.'cfg(target_arch = "x86")'.dependencies]
 kidneyos-syscalls.workspace = true
 nom.workspace = true
 spin.workspace = true

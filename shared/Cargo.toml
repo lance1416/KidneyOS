@@ -4,8 +4,11 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-spin.workspace = true
 pastey = "0.2.3"
+
+# Only used by the i686 paging code.
+[target.'cfg(target_arch = "x86")'.dependencies]
+spin.workspace = true
 
 [lints]
 workspace = true

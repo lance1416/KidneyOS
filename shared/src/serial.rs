@@ -31,6 +31,9 @@ pub unsafe fn inb(port: u16) -> u8 {
     }
 }
 
+// TODO(x86_64): insw and outsw use 32-bit registers; port them along with the
+// ATA driver.
+
 /// Wrapper for assembly function insw - input from port to string.
 ///
 /// Input word from I/O port specified in DX into memory location specified in ES:EDI.
@@ -39,6 +42,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 ///
 /// * The caller must ensure that the port is a valid port to read from.
 /// * They also need to ensure the buffer is valid and has enough space to store the data.
+#[cfg(target_arch = "x86")]
 pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
     unsafe {
         asm!(
@@ -66,6 +70,7 @@ pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
 ///
 /// The caller must ensure that the port is a valid port to write to.
 /// They also need to ensure the buffer is valid and has appropriate size to write to the port.
+#[cfg(target_arch = "x86")]
 pub unsafe fn outsw(port: u16, buffer: *const u8, count: usize) {
     unsafe {
         asm!(

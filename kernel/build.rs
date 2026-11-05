@@ -3,8 +3,11 @@ use std::{env, path::Path, process};
 fn main() {
     println!("cargo:rerun-if-env-changed=KIDNEYOS_TRAMPOLINE_DIR");
 
-    // Host builds (tests, clippy) don't link the trampoline.
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("none") {
+    // Host builds (tests, clippy) don't link the trampoline, and neither does
+    // the x86_64 kernel, whose boot stub is part of the kernel itself.
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("none")
+        || env::var("CARGO_CFG_TARGET_ARCH").as_deref() != Ok("x86")
+    {
         return;
     }
 
