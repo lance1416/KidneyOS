@@ -1,8 +1,19 @@
 [workspace]
-members = ["kernel", "syscalls", "trampoline"]
+members = ["kernel", "shared", "syscalls", "trampoline"]
 # User programs are a separate workspace, built for a different target.
 exclude = ["programs"]
-resolver = "2"
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+kidneyos-shared.path = "shared"
+kidneyos-syscalls.path = "syscalls"
+nom = { version = "8.0.0", default-features = false }
+spin = { version = "0.12.3", default-features = false, features = ["lazy"] }
+zerocopy = { version = "0.8.63", features = ["derive"] }
 
 [workspace.lints.clippy]
 borrow_as_ptr = "warn"

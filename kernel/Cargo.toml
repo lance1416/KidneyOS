@@ -1,15 +1,14 @@
 [package]
 name = "kidneyos"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-nom = { version = "8.0.0", default-features = false }
-
-kidneyos-shared.path = "../shared"
-spin = { version = "0.12.3", default-features = false, features = ["lazy"] }
-zerocopy = { version = "0.8.63", features = ["derive"] }
-kidneyos-syscalls.path = "../syscalls"
+kidneyos-shared.workspace = true
+kidneyos-syscalls.workspace = true
+nom.workspace = true
+spin.workspace = true
+zerocopy.workspace = true
 
 [features]
 default = ["ticket_mutex"]
