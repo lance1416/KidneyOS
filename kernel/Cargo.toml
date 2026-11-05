@@ -5,15 +5,12 @@ edition.workspace = true
 
 [dependencies]
 kidneyos-shared.workspace = true
+# Only the definitions: the stubs are for user programs, and would replace the
+# C library's functions of the same names in the host tests.
+kidneyos-syscalls = { workspace = true, default-features = false }
 nom.workspace = true
 spin = { workspace = true, features = ["spin_mutex"] }
 zerocopy.workspace = true
-
-# The syscall stubs use the i686 int 0x80 register ABI, which doesn't build for
-# x86_64; the x86_64 kernel only uses their definitions (see
-# src/user_program/syscall.rs).
-[target.'cfg(target_arch = "x86")'.dependencies]
-kidneyos-syscalls.workspace = true
 
 [features]
 default = ["ticket_mutex"]

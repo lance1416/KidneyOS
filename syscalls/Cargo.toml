@@ -8,6 +8,12 @@ edition.workspace = true
 # with the libc symbols std uses when built as a host test binary.
 test = false
 
+[features]
+default = ["stubs"]
+# The system call stubs (exported as C functions); without them, only the
+# definitions in `defs` (which the kernel uses).
+stubs = []
+
 [dependencies]
 
 [build-dependencies]
