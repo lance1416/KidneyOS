@@ -50,7 +50,7 @@ macro_rules! bitfield {
             pub const fn load(self) -> $t { self.0.load() }
 
             $(
-                paste! {
+                $crate::__pastey::paste! {
                     #[allow(dead_code)]
                     pub const fn $r_name(&self) -> $r_t { self.0.get_range($r_low, $r_high) as $r_t }
                     #[allow(dead_code)]
@@ -61,7 +61,7 @@ macro_rules! bitfield {
             )*
 
             $(
-                paste! {
+                $crate::__pastey::paste! {
                     #[allow(dead_code)]
                     pub const fn $b_name(&self) -> bool { self.0.get($b_idx) }
                     #[allow(dead_code)]

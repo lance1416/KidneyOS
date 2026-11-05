@@ -7,7 +7,6 @@ use alloc::boxed::Box;
 use core::alloc::AllocError;
 use core::ptr::NonNull;
 use kidneyos_shared::{bit_array::BitArray, bitfield, mem::PAGE_FRAME_SIZE};
-use paste::paste;
 
 bitfield!(
     CoreMapEntry, u8

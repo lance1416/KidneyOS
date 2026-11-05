@@ -1,5 +1,4 @@
 use crate::{bit_array::BitArray, bitfield};
-use paste::paste;
 
 bitfield!(
     SegmentSelector, u16

@@ -4,7 +4,6 @@
 
 use core::{arch::asm, mem::size_of};
 use kidneyos_shared::{bit_array::BitArray, bitfield};
-use paste::paste;
 
 use crate::interrupts::intr_handler::{
     general_protection_fault_handler, ide_prim_interrupt_handler, ide_secd_interrupt_handler,

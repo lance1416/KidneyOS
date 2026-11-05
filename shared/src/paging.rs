@@ -19,7 +19,6 @@ use core::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
-use paste::paste;
 use spin::LazyLock;
 
 const PAGE_DIRECTORY_LEN: usize = PAGE_FRAME_SIZE / size_of::<PageDirectoryEntry>();
