@@ -1,6 +1,6 @@
-use kidneyos_shared::video_memory::VIDEO_MEMORY_WRITER;
+use kidneyos_shared::video_memory::video_memory_writer;
 
 /// Clear the screen.
 pub fn clear() {
-    unsafe { VIDEO_MEMORY_WRITER.clear_screen() };
+    unsafe { video_memory_writer().clear_screen() };
 }

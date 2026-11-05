@@ -4,11 +4,11 @@
 
 #![allow(dead_code)]
 
-use crate::block::block_core::{BlockSector, BlockType, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, BlockSector, BlockType};
 use crate::block::partitions::partition_core::partition_scan;
 use crate::drivers::ata::ata_channel::AtaChannel;
 use crate::drivers::ata::ata_device::AtaDevice;
-use crate::interrupts::{intr_get_level, IntrLevel};
+use crate::interrupts::{IntrLevel, intr_get_level};
 use crate::sync::mutex::sleep::SleepMutex;
 use crate::system::unwrap_system;
 use alloc::boxed::Box;
@@ -94,49 +94,51 @@ pub extern "C" fn ide_init() -> i32 {
 ///
 /// This function must be called with interrupts enabled
 unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: bool) {
-    let _index: usize;
-    let channel: &mut AtaChannel = &mut c.lock();
-    let mut id: [u8; BLOCK_SECTOR_SIZE] = [0; BLOCK_SECTOR_SIZE];
+    unsafe {
+        let _index: usize;
+        let channel: &mut AtaChannel = &mut c.lock();
+        let mut id: [u8; BLOCK_SECTOR_SIZE] = [0; BLOCK_SECTOR_SIZE];
 
-    // Send the IDENTIFY DEVICE command, wait for an interrupt indicating the device's response
-    // is ready, and read the data into our buffer.
-    channel.select_device_wait(dev_no, block);
-    channel.issue_pio_command(ATA_IDENTIFY_DEVICE);
-    channel.sem_down();
+        // Send the IDENTIFY DEVICE command, wait for an interrupt indicating the device's response
+        // is ready, and read the data into our buffer.
+        channel.select_device_wait(dev_no, block);
+        channel.issue_pio_command(ATA_IDENTIFY_DEVICE);
+        channel.sem_down();
 
-    if !channel.wait_while_busy(block) {
-        channel.set_is_ata(dev_no, false);
-        // println!("channel {} device {} is not ata", c.channel_num, dev_no);
-        return;
+        if !channel.wait_while_busy(block) {
+            channel.set_is_ata(dev_no, false);
+            // println!("channel {} device {} is not ata", c.channel_num, dev_no);
+            return;
+        }
+        channel.read_sector(&mut id);
+
+        // Calculate capacity.
+        let capacity = usize::from_le_bytes(id[120..124].try_into().unwrap());
+        let name = if dev_no == 0 {
+            channel.get_d0_name()
+        } else {
+            channel.get_d1_name()
+        };
+        let name: String = name.iter().collect();
+        println!(
+            "channel: {} device: {} name: {} capacity: {}M",
+            channel.get_channel_num(),
+            dev_no,
+            &name,
+            capacity >> 11
+        );
+
+        let block_manager = &unwrap_system().block_manager;
+
+        let idx = block_manager.write().register_block(
+            BlockType::Raw,
+            &name,
+            capacity as BlockSector,
+            Box::new(AtaDevice(dev_no)),
+        );
+
+        // partition_scan(block_manager.read().by_id(idx).unwrap().as_ref());
+        let block = block_manager.read().by_id(idx).unwrap();
+        partition_scan(block.as_ref());
     }
-    channel.read_sector(&mut id);
-
-    // Calculate capacity.
-    let capacity = usize::from_le_bytes(id[120..124].try_into().unwrap());
-    let name = if dev_no == 0 {
-        channel.get_d0_name()
-    } else {
-        channel.get_d1_name()
-    };
-    let name: String = name.iter().collect();
-    println!(
-        "channel: {} device: {} name: {} capacity: {}M",
-        channel.get_channel_num(),
-        dev_no,
-        &name,
-        capacity >> 11
-    );
-
-    let block_manager = &unwrap_system().block_manager;
-
-    let idx = block_manager.write().register_block(
-        BlockType::Raw,
-        &name,
-        capacity as BlockSector,
-        Box::new(AtaDevice(dev_no)),
-    );
-
-    // partition_scan(block_manager.read().by_id(idx).unwrap().as_ref());
-    let block = block_manager.read().by_id(idx).unwrap();
-    partition_scan(block.as_ref());
 }

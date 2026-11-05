@@ -1,6 +1,6 @@
 #![allow(dead_code)] // Suppress unused warnings
 
-use crate::block::block_core::{BlockSector, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, BlockSector};
 use crate::sync::semaphore::Semaphore;
 use alloc::string::String;
 use kidneyos_shared::println;
@@ -240,56 +240,58 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn reset(&mut self, block: bool) {
-        let mut present: [bool; 2] = [false; 2];
+        unsafe {
+            let mut present: [bool; 2] = [false; 2];
 
-        // The ATA reset sequence depends on which devices are present,
-        // so we start by detecting device presence
-        for dev_num in 0..2 {
-            self.select_device(dev_num, block);
+            // The ATA reset sequence depends on which devices are present,
+            // so we start by detecting device presence
+            for dev_num in 0..2 {
+                self.select_device(dev_num, block);
 
-            // 0x55: 01010101
-            // 0xaa: 10101010
+                // 0x55: 01010101
+                // 0xaa: 10101010
 
-            outb(self.reg_nsect(), 0x55);
-            outb(self.reg_lbal(), 0xaa);
+                outb(self.reg_nsect(), 0x55);
+                outb(self.reg_lbal(), 0xaa);
 
-            outb(self.reg_nsect(), 0xaa);
-            outb(self.reg_lbal(), 0x55);
+                outb(self.reg_nsect(), 0xaa);
+                outb(self.reg_lbal(), 0x55);
 
-            outb(self.reg_nsect(), 0x55);
-            outb(self.reg_lbal(), 0xaa);
+                outb(self.reg_nsect(), 0x55);
+                outb(self.reg_lbal(), 0xaa);
 
-            present[dev_num as usize] =
-                (inb(self.reg_nsect()) == 0x55) && inb(self.reg_lbal()) == 0xaa;
-        }
-
-        // Issue soft reset sequence, which selects device 0 as a side effect.
-        // Also enable interrupts
-        outb(self.reg_ctl(), 0);
-        usleep(10, block);
-        outb(self.reg_ctl(), CTL_SRST);
-        usleep(10, block);
-        outb(self.reg_ctl(), 0);
-
-        msleep(150, block);
-
-        // Wait for device 0 to clear BSY
-        if present[0] {
-            self.select_device(0, block);
-            self.wait_while_busy(block);
-        }
-        // Wait for device 1 to clear BSY
-        if present[1] {
-            self.select_device(1, block);
-
-            // Wait for 30 seconds for the device to spin up
-            for _ in 0..3000 {
-                if inb(self.reg_nsect()) == 1 && inb(self.reg_lbal()) == 1 {
-                    break;
-                }
-                msleep(10, block);
+                present[dev_num as usize] =
+                    (inb(self.reg_nsect()) == 0x55) && inb(self.reg_lbal()) == 0xaa;
             }
-            self.wait_while_busy(block);
+
+            // Issue soft reset sequence, which selects device 0 as a side effect.
+            // Also enable interrupts
+            outb(self.reg_ctl(), 0);
+            usleep(10, block);
+            outb(self.reg_ctl(), CTL_SRST);
+            usleep(10, block);
+            outb(self.reg_ctl(), 0);
+
+            msleep(150, block);
+
+            // Wait for device 0 to clear BSY
+            if present[0] {
+                self.select_device(0, block);
+                self.wait_while_busy(block);
+            }
+            // Wait for device 1 to clear BSY
+            if present[1] {
+                self.select_device(1, block);
+
+                // Wait for 30 seconds for the device to spin up
+                for _ in 0..3000 {
+                    if inb(self.reg_nsect()) == 1 && inb(self.reg_lbal()) == 1 {
+                        break;
+                    }
+                    msleep(10, block);
+                }
+                self.wait_while_busy(block);
+            }
         }
     }
 
@@ -303,28 +305,30 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn check_device_type(&mut self, dev_num: u8, block: bool) -> bool {
-        self.select_device(dev_num, block);
+        unsafe {
+            self.select_device(dev_num, block);
 
-        let error: u8 = inb(self.reg_error());
-        let lbam: u8 = inb(self.reg_lbam());
-        let lbah: u8 = inb(self.reg_lbah());
-        let status: u8 = inb(self.reg_status());
+            let error: u8 = inb(self.reg_error());
+            let lbam: u8 = inb(self.reg_lbam());
+            let lbah: u8 = inb(self.reg_lbah());
+            let status: u8 = inb(self.reg_status());
 
-        if (error != ERR_AMNF && (error != (ERR_AMNF | ERR_BBK) || dev_num == 1))
+            if (error != ERR_AMNF && (error != (ERR_AMNF | ERR_BBK) || dev_num == 1))
             // Device not ready
             || (status & STA_RDY) == 0
             // Device is busy
             || (status & STA_BSY) != 0
-        {
-            self.set_is_ata(dev_num, false);
-            // error != (ERR_AMNF | ERR_BBK)
-            false // simply ignore device
-        } else {
-            // PATA: 0x0  & 0x0
-            // SATA: 0x3c & 0xc3
-            let is_ata: bool = (lbam == 0 && lbah == 0) || (lbam == 0x3c && lbah == 0xc3);
-            self.set_is_ata(dev_num, is_ata);
-            true
+            {
+                self.set_is_ata(dev_num, false);
+                // error != (ERR_AMNF | ERR_BBK)
+                false // simply ignore device
+            } else {
+                // PATA: 0x0  & 0x0
+                // SATA: 0x3c & 0xc3
+                let is_ata: bool = (lbam == 0 && lbah == 0) || (lbam == 0x3c && lbah == 0xc3);
+                self.set_is_ata(dev_num, is_ata);
+                true
+            }
         }
     }
 
@@ -335,30 +339,32 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn select_sector(&self, dev_no: u8, sector: BlockSector, block: bool) {
-        self.select_device_wait(dev_no, block);
+        unsafe {
+            self.select_device_wait(dev_no, block);
 
-        // https://wiki.osdev.org/ATA_PIO_Mode#28_bit_PIO
+            // https://wiki.osdev.org/ATA_PIO_Mode#28_bit_PIO
 
-        // 1. Send 0xE0 for the "master" or 0xF0 for the "slave", ORed with the highest 4 bits of
-        // the LBA to port 0x1F6: outb(0x1F6, 0xE0 | (slavebit << 4) | ((LBA >> 24) & 0x0F))
-        let device =
-            DEV_MBS | DEV_LBA | if dev_no == 1 { DEV_DRV } else { 0 } | (sector >> 24) as u8;
-        outb(self.reg_device(), device);
+            // 1. Send 0xE0 for the "master" or 0xF0 for the "slave", ORed with the highest 4 bits of
+            // the LBA to port 0x1F6: outb(0x1F6, 0xE0 | (slavebit << 4) | ((LBA >> 24) & 0x0F))
+            let device =
+                DEV_MBS | DEV_LBA | if dev_no == 1 { DEV_DRV } else { 0 } | (sector >> 24) as u8;
+            outb(self.reg_device(), device);
 
-        // 2. Send a NULL byte to port 0x1F1, if you like (it is ignored and wastes lots of CPU
-        // time): outb(0x1F1, 0x00)
+            // 2. Send a NULL byte to port 0x1F1, if you like (it is ignored and wastes lots of CPU
+            // time): outb(0x1F1, 0x00)
 
-        // 3. Send the sectorcount to port 0x1F2: outb(0x1F2, (unsigned char) count)
-        outb(self.reg_nsect(), 1);
+            // 3. Send the sectorcount to port 0x1F2: outb(0x1F2, (unsigned char) count)
+            outb(self.reg_nsect(), 1);
 
-        // 4. Send the low 8 bits of the LBA to port 0x1F3: outb(0x1F3, (unsigned char) LBA))
-        outb(self.reg_lbal(), sector as u8);
+            // 4. Send the low 8 bits of the LBA to port 0x1F3: outb(0x1F3, (unsigned char) LBA))
+            outb(self.reg_lbal(), sector as u8);
 
-        // 5. Send the next 8 bits of the LBA to port 0x1F4: outb(0x1F4, (unsigned char)(LBA >> 8))
-        outb(self.reg_lbam(), (sector >> 8) as u8);
+            // 5. Send the next 8 bits of the LBA to port 0x1F4: outb(0x1F4, (unsigned char)(LBA >> 8))
+            outb(self.reg_lbam(), (sector >> 8) as u8);
 
-        // 6. Send the next 8 bits of the LBA to port 0x1F5: outb(0x1F5, (unsigned char)(LBA >> 16))
-        outb(self.reg_lbah(), (sector >> 16) as u8);
+            // 6. Send the next 8 bits of the LBA to port 0x1F5: outb(0x1F5, (unsigned char)(LBA >> 16))
+            outb(self.reg_lbah(), (sector >> 16) as u8);
+        }
     }
 
     /// Writes `command` to the channel and prepares for receiving a completion interrupt.
@@ -367,8 +373,10 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn issue_pio_command(&mut self, command: u8) {
-        self.expecting_interrupt = true;
-        outb(self.reg_command(), command);
+        unsafe {
+            self.expecting_interrupt = true;
+            outb(self.reg_command(), command);
+        }
     }
 
     /// Reads a sector from the channel's data register in PIO mode into `buf`, which must have
@@ -378,7 +386,9 @@ impl AtaChannel {
     ///
     /// Caller must ensure that `buf` is valid and has room for BLOCK_SECTOR_SIZE bytes.
     pub unsafe fn read_sector(&self, buf: &mut [u8]) {
-        insw(self.reg_data(), buf.as_mut_ptr(), BLOCK_SECTOR_SIZE / 2);
+        unsafe {
+            insw(self.reg_data(), buf.as_mut_ptr(), BLOCK_SECTOR_SIZE / 2);
+        }
     }
 
     /// Writes a sector to the channel's data register in PIO mode from `buf`, which must contain
@@ -388,7 +398,9 @@ impl AtaChannel {
     ///
     /// Caller must ensure that `buf` is valid and contains BLOCK_SECTOR_SIZE bytes.
     pub unsafe fn write_sector(&mut self, buf: &[u8]) {
-        outsw(self.reg_data(), buf.as_ptr(), BLOCK_SECTOR_SIZE / 2);
+        unsafe {
+            outsw(self.reg_data(), buf.as_ptr(), BLOCK_SECTOR_SIZE / 2);
+        }
     }
 }
 
@@ -403,14 +415,16 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn wait_until_ready(&self, block: bool) {
-        for _ in 0..1000 {
-            if (inb(self.reg_status()) & (STA_BSY | STA_DRQ)) == 0 {
-                return;
+        unsafe {
+            for _ in 0..1000 {
+                if (inb(self.reg_status()) & (STA_BSY | STA_DRQ)) == 0 {
+                    return;
+                }
+                usleep(10, block);
             }
-            usleep(10, block);
-        }
 
-        println!("{} idle timeout", String::from_iter(&self.name));
+            println!("{} idle timeout", String::from_iter(&self.name));
+        }
     }
 
     /// Wait up to 30 seconds for the channel to clear BSY, and then return the status of the DRQ
@@ -422,22 +436,24 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn wait_while_busy(&self, block: bool) -> bool {
-        for i in 0..3000 {
-            if i == 700 {
-                println!("{} busy, waiting...", String::from_iter(&self.name));
-            }
-
-            if (inb(self.reg_alt_status()) & STA_BSY) == 0 {
-                if i >= 700 {
-                    kidneyos_shared::println!("{} ok", String::from_iter(&self.name));
+        unsafe {
+            for i in 0..3000 {
+                if i == 700 {
+                    println!("{} busy, waiting...", String::from_iter(&self.name));
                 }
-                return (inb(self.reg_alt_status()) & STA_DRQ) != 0;
-            }
-            usleep(10, block);
-        }
 
-        println!("{} wait_while_busy: failed", String::from_iter(&self.name));
-        false
+                if (inb(self.reg_alt_status()) & STA_BSY) == 0 {
+                    if i >= 700 {
+                        kidneyos_shared::println!("{} ok", String::from_iter(&self.name));
+                    }
+                    return (inb(self.reg_alt_status()) & STA_DRQ) != 0;
+                }
+                usleep(10, block);
+            }
+
+            println!("{} wait_while_busy: failed", String::from_iter(&self.name));
+            false
+        }
     }
 
     /// Program the channel so that `dev_num` is now the selected disk.
@@ -446,13 +462,15 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn select_device(&self, dev_num: u8, block: bool) {
-        // Must be set + Device
-        let dev: u8 = DEV_MBS | if dev_num == 1 { DEV_DRV } else { 0 };
+        unsafe {
+            // Must be set + Device
+            let dev: u8 = DEV_MBS | if dev_num == 1 { DEV_DRV } else { 0 };
 
-        outb(self.reg_device(), dev);
-        inb(self.reg_alt_status());
+            outb(self.reg_device(), dev);
+            inb(self.reg_alt_status());
 
-        nsleep(400, block);
+            nsleep(400, block);
+        }
     }
 
     /// Select disk `dev_num`, as [`AtaChannel::select_device`], but wait for the channel to become
@@ -462,9 +480,11 @@ impl AtaChannel {
     ///
     /// This function must be called with interrupts enabled.
     pub unsafe fn select_device_wait(&self, dev_num: u8, block: bool) {
-        self.wait_until_ready(block);
-        self.select_device(dev_num, block);
-        self.wait_until_ready(block);
+        unsafe {
+            self.wait_until_ready(block);
+            self.select_device(dev_num, block);
+            self.wait_until_ready(block);
+        }
     }
 }
 

@@ -47,24 +47,26 @@ fn is_range_writeable<T>(start: *const T, count: usize) -> bool {
 /// You must not hold any mutable references to any parts of the string
 /// while it is in scope (as is required by Rust).
 pub unsafe fn get_cstr_from_user_space(ptr: *const u8) -> Result<&'static str, CStrError> {
-    let mut len = 0usize;
-    if !is_range_readable(ptr, 1) {
-        return Err(CStrError::Fault);
-    }
-    loop {
-        if *ptr.add(len) == 0 {
-            break;
-        }
-        len += 1;
-        let Some(end) = (ptr as usize).checked_add(len) else {
-            return Err(CStrError::Fault);
-        };
-        if end % PAGE_FRAME_SIZE == 0 && !is_range_readable(end as *const u8, 1) {
+    unsafe {
+        let mut len = 0usize;
+        if !is_range_readable(ptr, 1) {
             return Err(CStrError::Fault);
         }
+        loop {
+            if *ptr.add(len) == 0 {
+                break;
+            }
+            len += 1;
+            let Some(end) = (ptr as usize).checked_add(len) else {
+                return Err(CStrError::Fault);
+            };
+            if end % PAGE_FRAME_SIZE == 0 && !is_range_readable(end as *const u8, 1) {
+                return Err(CStrError::Fault);
+            }
+        }
+        let slice: &'static [u8] = core::slice::from_raw_parts(ptr, len);
+        core::str::from_utf8(slice).map_err(|_| CStrError::BadUtf8)
     }
-    let slice: &'static [u8] = core::slice::from_raw_parts(ptr, len);
-    core::str::from_utf8(slice).map_err(|_| CStrError::BadUtf8)
 }
 
 /// Construct mutable slice from userspace pointer
@@ -81,13 +83,15 @@ pub unsafe fn get_mut_slice_from_user_space<T>(
     ptr: *mut T,
     count: usize,
 ) -> Option<&'static mut [T]> {
-    if !ptr.is_aligned() {
-        return None;
+    unsafe {
+        if !ptr.is_aligned() {
+            return None;
+        }
+        if !is_range_writeable(ptr, count) {
+            return None;
+        }
+        Some(core::slice::from_raw_parts_mut(ptr.cast(), count))
     }
-    if !is_range_writeable(ptr, count) {
-        return None;
-    }
-    Some(core::slice::from_raw_parts_mut(ptr.cast(), count))
 }
 
 /// Construct slice from userspace pointer
@@ -101,14 +105,16 @@ pub unsafe fn get_mut_slice_from_user_space<T>(
 /// while it is in scope (as is required by Rust).
 /// Additionally, `ptr[..count]` must only contain valid values for `T` (e.g. it can't contain the byte `2` if `T` is `bool`).
 pub unsafe fn get_slice_from_user_space<T>(ptr: *const T, count: usize) -> Option<&'static [T]> {
-    if !ptr.is_aligned() {
-        return None;
+    unsafe {
+        if !ptr.is_aligned() {
+            return None;
+        }
+        if !is_range_readable(ptr, count) {
+            return None;
+        }
+        let ptr: *const T = ptr.cast();
+        Some(core::slice::from_raw_parts(ptr, count))
     }
-    if !is_range_readable(ptr, count) {
-        return None;
-    }
-    let ptr: *const T = ptr.cast();
-    Some(core::slice::from_raw_parts(ptr, count))
 }
 
 /// Construct mutable reference from userspace pointer.
@@ -119,7 +125,7 @@ pub unsafe fn get_slice_from_user_space<T>(ptr: *const T, count: usize) -> Optio
 ///
 /// See [`get_mut_slice_from_user_space`].
 pub unsafe fn get_mut_from_user_space<T>(ptr: *mut T) -> Option<&'static mut T> {
-    Some(&mut get_mut_slice_from_user_space(ptr, 1)?[0])
+    unsafe { Some(&mut get_mut_slice_from_user_space(ptr, 1)?[0]) }
 }
 
 /// Construct reference from userspace pointer.
@@ -130,5 +136,5 @@ pub unsafe fn get_mut_from_user_space<T>(ptr: *mut T) -> Option<&'static mut T> 
 ///
 /// See [`get_slice_from_user_space`].
 pub unsafe fn get_ref_from_user_space<T>(ptr: *const T) -> Option<&'static T> {
-    Some(&get_slice_from_user_space(ptr, 1)?[0])
+    unsafe { Some(&get_slice_from_user_space(ptr, 1)?[0]) }
 }

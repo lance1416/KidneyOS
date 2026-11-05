@@ -62,23 +62,26 @@ static mut IDT_DESCRIPTOR: IDTDescriptor = IDTDescriptor {
 /// Can only be executed within code that expects the interrupt handlers to be
 /// defined as they are described in intr_handler.rs
 pub unsafe fn load() {
-    IDT_DESCRIPTOR.offset = IDT.as_ptr() as u32;
+    unsafe {
+        IDT_DESCRIPTOR.offset = (&raw const IDT).cast::<GateDescriptor>() as u32;
 
-    for gate_descriptor in &mut IDT {
-        *gate_descriptor = GateDescriptor::default()
-            .with_offset(unhandled_handler as usize as u32)
-            .with_segment_selector(0x8)
-            .with_gate_type(0xEu8)
-            .with_descriptor_privilege_level(3u8)
-            .with_present(true);
+        let idt = &mut *&raw mut IDT;
+        for gate_descriptor in idt.iter_mut() {
+            *gate_descriptor = GateDescriptor::default()
+                .with_offset(unhandled_handler as usize as u32)
+                .with_segment_selector(0x8)
+                .with_gate_type(0xEu8)
+                .with_descriptor_privilege_level(3u8)
+                .with_present(true);
+        }
+        idt[0xd] = idt[0xd].with_offset(general_protection_fault_handler as usize as u32);
+        idt[0xe] = idt[0xe].with_offset(page_fault_handler as usize as u32);
+        idt[0x20] = idt[0x20].with_offset(timer_interrupt_handler as usize as u32); // PIC1_OFFSET (IRQ0)
+        idt[0x21] = idt[0x21].with_offset(keyboard_handler as usize as u32); // Keyboard (IRQ1)
+        idt[0x2E] = idt[0x2E].with_offset(ide_prim_interrupt_handler as usize as u32); // IDE Primary (IRQ14)
+        idt[0x2F] = idt[0x2F].with_offset(ide_secd_interrupt_handler as usize as u32); // IDE Secondary (IRQ15)
+        idt[0x80] = idt[0x80].with_offset(syscall_handler as usize as u32);
+
+        asm!("lidt [{}]", sym IDT_DESCRIPTOR);
     }
-    IDT[0xd] = IDT[0xd].with_offset(general_protection_fault_handler as usize as u32);
-    IDT[0xe] = IDT[0xe].with_offset(page_fault_handler as usize as u32);
-    IDT[0x20] = IDT[0x20].with_offset(timer_interrupt_handler as usize as u32); // PIC1_OFFSET (IRQ0)
-    IDT[0x21] = IDT[0x21].with_offset(keyboard_handler as usize as u32); // Keyboard (IRQ1)
-    IDT[0x2E] = IDT[0x2E].with_offset(ide_prim_interrupt_handler as usize as u32); // IDE Primary (IRQ14)
-    IDT[0x2F] = IDT[0x2F].with_offset(ide_secd_interrupt_handler as usize as u32); // IDE Secondary (IRQ15)
-    IDT[0x80] = IDT[0x80].with_offset(syscall_handler as usize as u32);
-
-    asm!("lidt [{}]", sym IDT_DESCRIPTOR);
 }

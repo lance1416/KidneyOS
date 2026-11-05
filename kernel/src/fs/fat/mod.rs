@@ -1,7 +1,7 @@
 mod dirent;
 #[allow(clippy::module_inception)]
 mod fat;
-use crate::block::block_core::{Block, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block};
 use crate::vfs::{
     DirEntries, Error, FileInfo, INodeNum, INodeType, Path, RawDirEntry, Result, SimpleFileSystem,
 };
@@ -316,7 +316,10 @@ impl SimpleFileSystem for FatFS {
         if !self.fat.is_cluster_allocated(inode) {
             return Err(Error::NotFound);
         }
-        debug_assert!(self.file_info.contains_key(&inode), "inode opened without its directory entry being read (or there is a bug in the FAT filesystem)");
+        debug_assert!(
+            self.file_info.contains_key(&inode),
+            "inode opened without its directory entry being read (or there is a bug in the FAT filesystem)"
+        );
         Ok(())
     }
     fn create(&mut self, _parent: INodeNum, _name: &Path) -> Result<INodeNum> {
@@ -415,7 +418,9 @@ impl SimpleFileSystem for FatFS {
         Err(Error::ReadOnlyFS)
     }
     fn readlink(&mut self, _link: INodeNum) -> Result<String> {
-        panic!("this should never be called by the kernel, since we never tell it something is a symlink")
+        panic!(
+            "this should never be called by the kernel, since we never tell it something is a symlink"
+        )
     }
     fn truncate(&mut self, _file: INodeNum, _size: u64) -> Result<()> {
         Err(Error::ReadOnlyFS)
@@ -431,7 +436,7 @@ mod test {
     use crate::block::block_core::test::block_from_file;
     use crate::vfs::OwnedDirEntry;
     use std::fs::File;
-    use std::io::{prelude::*, Cursor};
+    use std::io::{Cursor, prelude::*};
     /// Open a gzip-compressed raw disk image containing a FAT filesystem.
     /// Any changes made to the filesystem are kept in memory, but not written back to the file.
     fn open_img_gz(path: &str) -> FatFS {

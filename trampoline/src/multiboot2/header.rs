@@ -25,7 +25,7 @@ const ARCHITECTURE: u32 = 0;
 const HEADER_LENGTH: u32 = size_of::<Header>() as u32;
 
 #[used]
-#[link_section = ".multiboot2_header"]
+#[unsafe(link_section = ".multiboot2_header")]
 static HEADER: Header = Header {
     magic: MAGIC,
     architecture: ARCHITECTURE,

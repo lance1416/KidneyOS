@@ -1,5 +1,5 @@
 use crate::block::block_core::BLOCK_SECTOR_SIZE;
-use crate::fs::fat::{error, FatFS};
+use crate::fs::fat::{FatFS, error};
 use crate::vfs::{FileInfo, INodeNum, INodeType, Result};
 use alloc::{string::String, vec, vec::Vec};
 use core::ops::ControlFlow;

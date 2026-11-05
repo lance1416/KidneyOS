@@ -110,10 +110,21 @@ impl fmt::Write for VideoMemoryWriter {
     }
 }
 
-pub static mut VIDEO_MEMORY_WRITER: VideoMemoryWriter = VideoMemoryWriter {
+static mut VIDEO_MEMORY_WRITER: VideoMemoryWriter = VideoMemoryWriter {
     cursor: 0,
     attribute: Attribute::new(Colour::White, Colour::Black),
 };
+
+/// Returns the global video memory writer.
+///
+/// # Safety
+///
+/// The caller must ensure that no other reference to the writer is in use
+/// while the returned one is (e.g. single core and no interrupts).
+pub unsafe fn video_memory_writer() -> &'static mut VideoMemoryWriter {
+    // SAFETY: Exclusive access is guaranteed by the caller.
+    unsafe { &mut *&raw mut VIDEO_MEMORY_WRITER }
+}
 
 // Functions for RUSH
 impl VideoMemoryWriter {
@@ -124,17 +135,19 @@ impl VideoMemoryWriter {
     /// Assumes that there is only one core => multiple threads cannot be inside
     /// this function at once holding video_memory.
     pub unsafe fn clear_screen(&mut self) {
-        let video_memory =
-            slice::from_raw_parts_mut(VIDEO_MEMORY_BASE as *mut Character, VIDEO_MEMORY_SIZE);
+        unsafe {
+            let video_memory =
+                slice::from_raw_parts_mut(VIDEO_MEMORY_BASE as *mut Character, VIDEO_MEMORY_SIZE);
 
-        for c in video_memory.iter_mut() {
-            *c = Character {
-                ascii: b' ',
-                attribute: self.attribute,
-            };
+            for c in video_memory.iter_mut() {
+                *c = Character {
+                    ascii: b' ',
+                    attribute: self.attribute,
+                };
+            }
+
+            self.cursor = 0;
         }
-
-        self.cursor = 0;
     }
 
     /// Move the cursor back one character.
@@ -144,16 +157,18 @@ impl VideoMemoryWriter {
     /// Assumes that there is only one core => multiple threads cannot be inside
     /// this function at once holding video_memory.
     pub unsafe fn backspace(&mut self) {
-        if self.cursor < 1 {
-            return; // Not enough characters to delete.
-        }
+        unsafe {
+            if self.cursor < 1 {
+                return; // Not enough characters to delete.
+            }
 
-        self.cursor -= 1;
-        let video_memory =
-            slice::from_raw_parts_mut(VIDEO_MEMORY_BASE as *mut Character, VIDEO_MEMORY_SIZE);
-        video_memory[self.cursor] = Character {
-            ascii: b' ',
-            attribute: self.attribute,
-        };
+            self.cursor -= 1;
+            let video_memory =
+                slice::from_raw_parts_mut(VIDEO_MEMORY_BASE as *mut Character, VIDEO_MEMORY_SIZE);
+            video_memory[self.cursor] = Character {
+                ascii: b' ',
+                attribute: self.attribute,
+            };
+        }
     }
 }

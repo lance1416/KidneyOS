@@ -7,7 +7,7 @@ pub mod timer;
 
 use core::{
     arch::asm,
-    sync::atomic::{compiler_fence, Ordering},
+    sync::atomic::{Ordering, compiler_fence},
 };
 
 #[allow(unused)]

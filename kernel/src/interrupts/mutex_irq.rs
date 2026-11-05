@@ -1,4 +1,4 @@
-use crate::interrupts::{intr_disable, intr_enable, intr_get_level, IntrLevel};
+use crate::interrupts::{IntrLevel, intr_disable, intr_enable, intr_get_level};
 use crate::sync::mutex::{Mutex, MutexGuard};
 use core::{
     fmt,

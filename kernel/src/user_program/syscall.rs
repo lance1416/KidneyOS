@@ -7,7 +7,7 @@ use crate::fs::syscalls::{
 };
 use crate::interrupts::{intr_disable, intr_enable};
 use crate::mem::util::{
-    get_cstr_from_user_space, get_mut_from_user_space, get_ref_from_user_space, CStrError,
+    CStrError, get_cstr_from_user_space, get_mut_from_user_space, get_ref_from_user_space,
 };
 use crate::system::{running_thread_pid, running_thread_ppid, running_thread_tid, unwrap_system};
 use crate::threading::process::Pid;
@@ -17,7 +17,7 @@ use crate::threading::thread_control_block::ThreadControlBlock;
 use crate::threading::thread_sleep::thread_sleep;
 use crate::user_program::elf::Elf;
 use crate::user_program::random::getrandom;
-use crate::user_program::time::{get_rtc, get_tsc, Timespec, CLOCK_MONOTONIC, CLOCK_REALTIME};
+use crate::user_program::time::{CLOCK_MONOTONIC, CLOCK_REALTIME, Timespec, get_rtc, get_tsc};
 use alloc::boxed::Box;
 use core::slice::from_raw_parts_mut;
 use kidneyos_shared::println;

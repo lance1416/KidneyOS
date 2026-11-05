@@ -1,5 +1,5 @@
-use crate::interrupts::mutex_irq::{hold_interrupts, MutexIrq};
 use crate::interrupts::IntrLevel;
+use crate::interrupts::mutex_irq::{MutexIrq, hold_interrupts};
 use crate::system::running_thread_tid;
 use crate::threading::process::{AtomicTid, Tid};
 use crate::threading::thread_sleep::{thread_sleep, thread_wakeup};

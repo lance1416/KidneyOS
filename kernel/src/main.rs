@@ -30,13 +30,25 @@ use crate::threading::process::create_process_state;
 use crate::threading::thread_control_block::ThreadControlBlock;
 use alloc::boxed::Box;
 use interrupts::{idt, pic};
-use kidneyos_shared::{global_descriptor_table, println, video_memory::VIDEO_MEMORY_WRITER};
+use kidneyos_shared::{global_descriptor_table, println, video_memory::video_memory_writer};
 use mem::KernelAllocator;
 use threading::{create_thread_state, thread_system_start};
 use vfs::tempfs::TempFS;
 
 #[cfg_attr(not(test), global_allocator)]
-pub static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
+static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
+
+/// Returns the global kernel allocator.
+///
+/// # Safety
+///
+/// The caller must ensure that nothing else (including the global allocator
+/// interface, e.g. from an interrupt handler) uses the allocator while the
+/// returned reference is in use.
+pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
+    // SAFETY: Exclusive access is guaranteed by the caller.
+    unsafe { &mut *&raw mut KERNEL_ALLOCATOR }
+}
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -48,15 +60,15 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
 const INIT: &[u8] =
     include_bytes!("../../programs/pipes/target/i586-unknown-linux-gnu/release/pipes").as_slice();
 
-#[cfg_attr(not(test), no_mangle)]
+#[cfg_attr(not(test), unsafe(no_mangle))]
 extern "C" fn main(mem_upper: usize, video_memory_skip_lines: usize) -> ! {
     unsafe {
-        VIDEO_MEMORY_WRITER.skip_lines(video_memory_skip_lines);
+        video_memory_writer().skip_lines(video_memory_skip_lines);
     }
 
     // SAFETY: Single core, interrupts disabled.
     unsafe {
-        KERNEL_ALLOCATOR.init(mem_upper);
+        kernel_allocator().init(mem_upper);
 
         println!("Setting up IDTR");
         idt::load();

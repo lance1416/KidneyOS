@@ -1,6 +1,6 @@
 #![allow(dead_code)] // Suppress unused warnings, especially for the getters and setters
 
-use crate::block::block_core::{Block, BlockOp, BlockSector, BlockType, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block, BlockOp, BlockSector, BlockType};
 use crate::block::block_error::BlockError;
 use crate::block::partitions::partition_utils::lba_to_chs;
 use crate::rush::rush_core::IS_SYSTEM_FULLY_INITIALIZED;
@@ -193,10 +193,12 @@ impl PartitionTableEntry {
     /// function is mutually exclusive with [`PartitionTableEntry::set_start`], and it suffices to
     /// call one of them.
     pub(crate) unsafe fn set_offset(&mut self, offset: u32) {
-        self.offset = offset;
+        unsafe {
+            self.offset = offset;
 
-        // Also update the start
-        self.set_start(offset);
+            // Also update the start
+            self.set_start(offset);
+        }
     }
 
     /// Get the size.
@@ -216,10 +218,12 @@ impl PartitionTableEntry {
     /// function is mutually exclusive with [`PartitionTableEntry::set_end`], and it suffices to
     /// call one of them.
     pub(crate) unsafe fn set_size(&mut self, size: u32) {
-        self.size = size;
+        unsafe {
+            self.size = size;
 
-        // Also update the end
-        self.set_end(self.offset + size);
+            // Also update the end
+            self.set_end(self.offset + size);
+        }
     }
 }
 

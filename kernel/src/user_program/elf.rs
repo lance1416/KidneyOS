@@ -1,9 +1,9 @@
+use nom::IResult;
 use nom::bytes::complete::{tag, take};
 use nom::combinator::{map_opt, verify};
 use nom::error::Error;
-use nom::number::complete::{u16, u32, u8};
 use nom::number::Endianness;
-use nom::IResult;
+use nom::number::complete::{u8, u16, u32};
 
 use alloc::vec::Vec;
 

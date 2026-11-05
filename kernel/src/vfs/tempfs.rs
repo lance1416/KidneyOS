@@ -133,7 +133,9 @@ impl TempFS {
         }
         let parent_inode = self.get_inode(parent);
         let TempINodeData::Directory(parent_dir) = &parent_inode.data else {
-            panic!("Kernel should call stat to make sure this is a directory before removing something from it.");
+            panic!(
+                "Kernel should call stat to make sure this is a directory before removing something from it."
+            );
         };
         let inode_num = parent_dir.inode_by_name(name).ok_or(Error::NotFound)?;
         let inode = self
@@ -210,7 +212,9 @@ impl SimpleFileSystem for TempFS {
             return Err(Error::NotDirectory);
         }
         let TempINodeData::Directory(parent_dir) = &mut parent_inode.data else {
-            panic!("Kernel should call stat to make sure this is a directory before creating a file in it.");
+            panic!(
+                "Kernel should call stat to make sure this is a directory before creating a file in it."
+            );
         };
         let inode_num = parent_dir.inode_by_name(name).unwrap_or_else(|| {
             // create new file
@@ -242,7 +246,9 @@ impl SimpleFileSystem for TempFS {
         }
         let inode = self.get_inode(dir);
         let TempINodeData::Directory(dir) = &inode.data else {
-            panic!("Kernel should call stat to make sure this is a directory before calling readdir on it.");
+            panic!(
+                "Kernel should call stat to make sure this is a directory before calling readdir on it."
+            );
         };
         let mut entries = DirEntries::new();
         for (name, inode_num) in dir.entries.iter() {
@@ -350,7 +356,9 @@ impl SimpleFileSystem for TempFS {
         // check for existence
         let parent_inode = self.get_inode(parent);
         let TempINodeData::Directory(parent_dir) = &parent_inode.data else {
-            panic!("Kernel should make sure parent is a directory via stat before creating a link in it.");
+            panic!(
+                "Kernel should make sure parent is a directory via stat before creating a link in it."
+            );
         };
         if parent_inode.nlink == 0 {
             // this directory has been rmdir'd
@@ -380,7 +388,9 @@ impl SimpleFileSystem for TempFS {
         // check for existence
         let parent_inode = self.get_inode(parent);
         let TempINodeData::Directory(parent_dir) = &parent_inode.data else {
-            panic!("Kernel should make sure parent is a directory via stat before creating a symlink in it.");
+            panic!(
+                "Kernel should make sure parent is a directory via stat before creating a symlink in it."
+            );
         };
         if name.is_empty() || link.is_empty() {
             panic!("Empty path passed to symlink.");

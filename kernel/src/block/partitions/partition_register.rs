@@ -1,6 +1,6 @@
 #![allow(dead_code)] // Suppress unused warnings
 
-use crate::block::block_core::{Block, BlockSector, BlockType, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block, BlockSector, BlockType};
 use crate::block::block_error::BlockError;
 use crate::block::partitions::partition_core::PartitionTable;
 use crate::system::unwrap_system;

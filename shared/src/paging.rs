@@ -5,8 +5,9 @@ use crate::{
     bit_array::BitArray,
     bitfield,
     mem::{
+        HUGE_PAGE_SIZE, OFFSET, PAGE_FRAME_SIZE,
         phys::{kernel_data_start, kernel_end, kernel_start, main_stack_top, trampoline_heap_top},
-        virt, HUGE_PAGE_SIZE, OFFSET, PAGE_FRAME_SIZE,
+        virt,
     },
     video_memory::{VIDEO_MEMORY_BASE, VIDEO_MEMORY_SIZE},
 };
@@ -218,64 +219,66 @@ impl<A: Allocator> PageManager<A> {
     /// there's nothing in the TLB for the virtual addresses included in this
     /// mapping, the mapping may take effect without the call to `load`.
     pub unsafe fn map(&mut self, phys_addr: usize, virt_addr: usize, write: bool, user: bool) {
-        assert_eq!(
-            phys_addr % PAGE_FRAME_SIZE,
-            0,
-            "phys_addr was not page-frame-aligned"
-        );
-        assert_eq!(
-            virt_addr % PAGE_FRAME_SIZE,
-            0,
-            "virt_addr was not page-frame-aligned"
-        );
+        unsafe {
+            assert_eq!(
+                phys_addr % PAGE_FRAME_SIZE,
+                0,
+                "phys_addr was not page-frame-aligned"
+            );
+            assert_eq!(
+                virt_addr % PAGE_FRAME_SIZE,
+                0,
+                "virt_addr was not page-frame-aligned"
+            );
 
-        let page_directory = self.root.as_mut();
-        let (pdi, pti) = virt_parts(virt_addr);
+            let page_directory = self.root.as_mut();
+            let (pdi, pti) = virt_parts(virt_addr);
 
-        let page_table = if !page_directory[pdi].present() {
-            let Ok(page_table_addr) = self.alloc.allocate(PAGE_TABLE_LAYOUT) else {
-                panic!("allocation failed");
+            let page_table = if !page_directory[pdi].present() {
+                let Ok(page_table_addr) = self.alloc.allocate(PAGE_TABLE_LAYOUT) else {
+                    panic!("allocation failed");
+                };
+                let mut page_table_addr = page_table_addr.cast::<PageTable>();
+                // zero page table (uses less stack space than *page_table = PageTable::default() in debug build)
+                core::ptr::write_bytes(page_table_addr.as_ptr(), 0, 1);
+                let page_table = page_table_addr.as_mut();
+                let page_table_phys_addr =
+                    page_table_addr.cast::<u8>().as_ptr() as usize - self.phys_to_alloc_addr_offset;
+                let page_table_frame = page_table_phys_addr / size_of::<PageTable>();
+                page_directory[pdi] = PageDirectoryEntry::default()
+                    .with_present(true)
+                    .with_read_write(write)
+                    .with_user_supervisor(user)
+                    .with_page_table_frame(page_table_frame as u32);
+                page_table
+            } else {
+                // NOTE: For a page to be considered writable, the read_write bit
+                // must be set in both the page directory entry, and the page table
+                // entry, so it's safe for us to enable things here. Same goes for
+                // user_supervisor.
+                if write && !page_directory[pdi].read_write() {
+                    page_directory[pdi] = page_directory[pdi].with_read_write(true);
+                }
+                if user && !page_directory[pdi].user_supervisor() {
+                    page_directory[pdi] = page_directory[pdi].with_user_supervisor(true);
+                }
+
+                &mut *page_directory.page_table(pdi, self.phys_to_alloc_addr_offset)
             };
-            let mut page_table_addr = page_table_addr.cast::<PageTable>();
-            // zero page table (uses less stack space than *page_table = PageTable::default() in debug build)
-            core::ptr::write_bytes(page_table_addr.as_ptr(), 0, 1);
-            let page_table = page_table_addr.as_mut();
-            let page_table_phys_addr =
-                page_table_addr.cast::<u8>().as_ptr() as usize - self.phys_to_alloc_addr_offset;
-            let page_table_frame = page_table_phys_addr / size_of::<PageTable>();
-            page_directory[pdi] = PageDirectoryEntry::default()
+
+            assert!(
+                !page_table[pti].present(),
+                "virtual address {:#X} was already mapped",
+                virt_addr
+            );
+
+            let phys_frame = (phys_addr / PAGE_FRAME_SIZE) as u32;
+            page_table[pti] = PageTableEntry::default()
                 .with_present(true)
                 .with_read_write(write)
                 .with_user_supervisor(user)
-                .with_page_table_frame(page_table_frame as u32);
-            page_table
-        } else {
-            // NOTE: For a page to be considered writable, the read_write bit
-            // must be set in both the page directory entry, and the page table
-            // entry, so it's safe for us to enable things here. Same goes for
-            // user_supervisor.
-            if write && !page_directory[pdi].read_write() {
-                page_directory[pdi] = page_directory[pdi].with_read_write(true);
-            }
-            if user && !page_directory[pdi].user_supervisor() {
-                page_directory[pdi] = page_directory[pdi].with_user_supervisor(true);
-            }
-
-            &mut *page_directory.page_table(pdi, self.phys_to_alloc_addr_offset)
-        };
-
-        assert!(
-            !page_table[pti].present(),
-            "virtual address {:#X} was already mapped",
-            virt_addr
-        );
-
-        let phys_frame = (phys_addr / PAGE_FRAME_SIZE) as u32;
-        page_table[pti] = PageTableEntry::default()
-            .with_present(true)
-            .with_read_write(write)
-            .with_user_supervisor(user)
-            .with_page_table_frame(phys_frame);
+                .with_page_table_frame(phys_frame);
+        }
     }
 
     /// Like map, except with length `HUGE_PAGE_SIZE`. `virt_addr` must have an
@@ -286,33 +289,35 @@ impl<A: Allocator> PageManager<A> {
     ///
     /// Same as `map`.
     pub unsafe fn huge_map(&mut self, phys_addr: usize, virt_addr: usize, write: bool, user: bool) {
-        assert!(*PSE_ENABLED, "PSE was not enabled");
-        assert_eq!(
-            phys_addr % PAGE_FRAME_SIZE,
-            0,
-            "phys_addr was not page-frame-aligned"
-        );
-        assert_eq!(
-            virt_addr % HUGE_PAGE_SIZE,
-            0,
-            "virt_addr was not properly aligned"
-        );
+        unsafe {
+            assert!(*PSE_ENABLED, "PSE was not enabled");
+            assert_eq!(
+                phys_addr % PAGE_FRAME_SIZE,
+                0,
+                "phys_addr was not page-frame-aligned"
+            );
+            assert_eq!(
+                virt_addr % HUGE_PAGE_SIZE,
+                0,
+                "virt_addr was not properly aligned"
+            );
 
-        let page_directory = self.root.as_mut();
-        let (pdi, _) = virt_parts(virt_addr);
+            let page_directory = self.root.as_mut();
+            let (pdi, _) = virt_parts(virt_addr);
 
-        assert!(
-            !page_directory[pdi].present(),
-            "virtual address {:#X} was already mapped",
-            virt_addr
-        );
+            assert!(
+                !page_directory[pdi].present(),
+                "virtual address {:#X} was already mapped",
+                virt_addr
+            );
 
-        page_directory[pdi] = PageDirectoryEntry::default()
-            .with_present(true)
-            .with_read_write(write)
-            .with_user_supervisor(user)
-            .with_page_size(true)
-            .with_page_table_frame((phys_addr / PAGE_FRAME_SIZE) as u32);
+            page_directory[pdi] = PageDirectoryEntry::default()
+                .with_present(true)
+                .with_read_write(write)
+                .with_user_supervisor(user)
+                .with_page_size(true)
+                .with_page_table_frame((phys_addr / PAGE_FRAME_SIZE) as u32);
+        }
     }
 
     /// Maps virtual addresses from `virt_start..(virt_start + len)` to the
@@ -334,45 +339,47 @@ impl<A: Allocator> PageManager<A> {
         write: bool,
         user: bool,
     ) {
-        assert_eq!(
-            phys_start % PAGE_FRAME_SIZE,
-            0,
-            "phys_start was not page-frame-aligned"
-        );
-        assert_eq!(
-            virt_start % PAGE_FRAME_SIZE,
-            0,
-            "virt_start was not page-frame-aligned"
-        );
-        assert_eq!(
-            len % PAGE_FRAME_SIZE,
-            0,
-            "len was not a multiple of PAGE_FRAME_SIZE"
-        );
+        unsafe {
+            assert_eq!(
+                phys_start % PAGE_FRAME_SIZE,
+                0,
+                "phys_start was not page-frame-aligned"
+            );
+            assert_eq!(
+                virt_start % PAGE_FRAME_SIZE,
+                0,
+                "virt_start was not page-frame-aligned"
+            );
+            assert_eq!(
+                len % PAGE_FRAME_SIZE,
+                0,
+                "len was not a multiple of PAGE_FRAME_SIZE"
+            );
 
-        let mut phys_addr = phys_start;
-        let mut virt_addr = virt_start;
-        loop {
-            if phys_addr - phys_start >= len {
-                break;
+            let mut phys_addr = phys_start;
+            let mut virt_addr = virt_start;
+            loop {
+                if phys_addr - phys_start >= len {
+                    break;
+                }
+
+                if *PSE_ENABLED
+                    && virt_addr % HUGE_PAGE_SIZE == 0
+                    && phys_addr.saturating_add(HUGE_PAGE_SIZE) - phys_start <= len
+                {
+                    self.huge_map(phys_addr, virt_addr, write, user);
+
+                    phys_addr = phys_addr.saturating_add(HUGE_PAGE_SIZE);
+                    virt_addr = virt_addr.saturating_add(HUGE_PAGE_SIZE);
+
+                    continue;
+                }
+
+                self.map(phys_addr, virt_addr, write, user);
+
+                phys_addr = phys_addr.saturating_add(PAGE_FRAME_SIZE);
+                virt_addr = virt_addr.saturating_add(PAGE_FRAME_SIZE);
             }
-
-            if *PSE_ENABLED
-                && virt_addr % HUGE_PAGE_SIZE == 0
-                && phys_addr.saturating_add(HUGE_PAGE_SIZE) - phys_start <= len
-            {
-                self.huge_map(phys_addr, virt_addr, write, user);
-
-                phys_addr = phys_addr.saturating_add(HUGE_PAGE_SIZE);
-                virt_addr = virt_addr.saturating_add(HUGE_PAGE_SIZE);
-
-                continue;
-            }
-
-            self.map(phys_addr, virt_addr, write, user);
-
-            phys_addr = phys_addr.saturating_add(PAGE_FRAME_SIZE);
-            virt_addr = virt_addr.saturating_add(PAGE_FRAME_SIZE);
         }
     }
 
@@ -388,7 +395,9 @@ impl<A: Allocator> PageManager<A> {
         write: bool,
         user: bool,
     ) {
-        self.map_range(start, start, frames_len, write, user);
+        unsafe {
+            self.map_range(start, start, frames_len, write, user);
+        }
     }
 
     /// Returns whether `pointer` is valid for reads if `write = false`, and writes if `write = true`.
@@ -505,25 +514,27 @@ impl<A: Allocator> Drop for PageManager<A> {
 /// with those tables must not cause any existing pointers to refer to anything
 /// they shouldn't.
 pub unsafe fn enable() {
-    bitfield!(
-        CR0, u32 {} { (write_protect, 16), (paging, 31) }
-    );
+    unsafe {
+        bitfield!(
+            CR0, u32 {} { (write_protect, 16), (paging, 31) }
+        );
 
-    const MASK: u32 = CR0::default()
-        .with_write_protect(true)
-        .with_paging(true)
-        .load();
+        const MASK: u32 = CR0::default()
+            .with_write_protect(true)
+            .with_paging(true)
+            .load();
 
-    asm!(
-        "
+        asm!(
+            "
         mov {0}, cr0
         or {0}, {mask}
         mov cr0, {0}
         ",
-        out(reg) _,
-        mask = const MASK,
-        options(nostack),
-    );
+            out(reg) _,
+            mask = const MASK,
+            options(nostack),
+        );
+    }
 }
 
 lazy_static! {
@@ -568,7 +579,7 @@ lazy_static! {
             CPUIDEdx, u32 {} { (pse, 3) }
         );
 
-        let core::arch::x86::CpuidResult { edx, .. } = unsafe { core::arch::x86::__cpuid(0) };
+        let core::arch::x86::CpuidResult { edx, .. } = core::arch::x86::__cpuid(0);
         CPUIDEdx::new(edx).pse()
     };
     static ref PSE_ENABLED: bool = {

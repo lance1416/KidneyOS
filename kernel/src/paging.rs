@@ -17,7 +17,9 @@ impl PageManagerDefault for PageManager<Global> {
 }
 
 pub unsafe fn enable() -> PageManager {
-    let page_manager = PageManager::default();
-    page_manager.load();
-    page_manager
+    unsafe {
+        let page_manager = PageManager::default();
+        page_manager.load();
+        page_manager
+    }
 }

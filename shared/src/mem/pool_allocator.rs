@@ -18,67 +18,70 @@ impl<const N: usize> PoolAllocator<N> {
     /// region must be valid for the lifetime of this PoolAllocator.
     #[allow(unused)]
     pub unsafe fn new(region: NonNull<[u8]>) -> Self {
-        // Ensure the region is large enough to store at least N bytes,
-        // because we're handing out N-byte blocks
-        assert!(region.len() >= N);
-        assert!(N.is_power_of_two()); // N must be a power of 2
+        unsafe {
+            // Ensure the region is large enough to store at least N bytes,
+            // because we're handing out N-byte blocks
+            assert!(region.len() >= N);
+            assert!(N.is_power_of_two()); // N must be a power of 2
 
-        // Calculate the required bitmap size in bytes, because each stores an u8
+            // Calculate the required bitmap size in bytes, because each stores an u8
 
-        // Round up the division to the nearest whole number
-        // This unit is in bytes
-        let bitmap_size = (region.len() / N).div_ceil(8);
+            // Round up the division to the nearest whole number
+            // This unit is in bytes
+            let bitmap_size = (region.len() / N).div_ceil(8);
 
-        // To allow the first block to always store the size of bitmap
-        assert!(N >= size_of::<usize>());
+            // To allow the first block to always store the size of bitmap
+            assert!(N >= size_of::<usize>());
 
-        // To ensure things are aligned.
-        assert!(region.as_ptr().as_mut_ptr() as usize % N == 0);
+            // To ensure things are aligned.
+            assert!(region.as_ptr().as_mut_ptr() as usize % N == 0);
 
-        // Calculate how many blocks the bitmap occupies
-        let bitmap_blocks = bitmap_size.div_ceil(N);
-        let total_blocks = region.len().div_ceil(N);
+            // Calculate how many blocks the bitmap occupies
+            let bitmap_blocks = bitmap_size.div_ceil(N);
+            let total_blocks = region.len().div_ceil(N);
 
-        // Ensure the region is large enough for the size of bitmap + bitmap_blocks
-        // + at least 1 extra block is available
-        #[allow(clippy::int_plus_one)]
-        {
-            assert!(total_blocks >= bitmap_blocks + 1 + 1);
-        }
-
-        let region_ptr = region.as_ptr();
-
-        // The first block is used to store how large the bitmap is, in units of bytes
-        ptr::write(region_ptr.cast::<usize>(), bitmap_size);
-
-        // Initialize the bitmap area to zero, which is 1 block away from the start
-        ptr::write_bytes(region_ptr.cast::<u8>().add(N), 0, bitmap_size);
-
-        // Get a mutable slice of the region where the bitmap is stored
-        let bitmap_slice = slice::from_raw_parts_mut(region_ptr.cast::<u8>().add(N), bitmap_size);
-
-        // Mark the blocks used by the bitmap as used in the bitmap
-        for i in 0..bitmap_blocks + 1 {
-            let byte_index = i / 8;
-            let bit_index = i % 8;
-            if byte_index < bitmap_size {
-                // Set the bit to mark the block as used
-                bitmap_slice[byte_index] |= 1 << bit_index;
+            // Ensure the region is large enough for the size of bitmap + bitmap_blocks
+            // + at least 1 extra block is available
+            #[allow(clippy::int_plus_one)]
+            {
+                assert!(total_blocks >= bitmap_blocks + 1 + 1);
             }
-        }
 
-        // Mark the blocks that aren't actually in region at the end as used in
-        // the bitmap
-        for i in total_blocks..bitmap_size * 8 {
-            let byte_index = i / 8;
-            let bit_index = i % 8;
-            if byte_index < bitmap_size {
-                // Set the bit to mark the block as used
-                bitmap_slice[byte_index] |= 1 << bit_index;
+            let region_ptr = region.as_ptr();
+
+            // The first block is used to store how large the bitmap is, in units of bytes
+            ptr::write(region_ptr.cast::<usize>(), bitmap_size);
+
+            // Initialize the bitmap area to zero, which is 1 block away from the start
+            ptr::write_bytes(region_ptr.cast::<u8>().add(N), 0, bitmap_size);
+
+            // Get a mutable slice of the region where the bitmap is stored
+            let bitmap_slice =
+                slice::from_raw_parts_mut(region_ptr.cast::<u8>().add(N), bitmap_size);
+
+            // Mark the blocks used by the bitmap as used in the bitmap
+            for i in 0..bitmap_blocks + 1 {
+                let byte_index = i / 8;
+                let bit_index = i % 8;
+                if byte_index < bitmap_size {
+                    // Set the bit to mark the block as used
+                    bitmap_slice[byte_index] |= 1 << bit_index;
+                }
             }
-        }
 
-        Self { region }
+            // Mark the blocks that aren't actually in region at the end as used in
+            // the bitmap
+            for i in total_blocks..bitmap_size * 8 {
+                let byte_index = i / 8;
+                let bit_index = i % 8;
+                if byte_index < bitmap_size {
+                    // Set the bit to mark the block as used
+                    bitmap_slice[byte_index] |= 1 << bit_index;
+                }
+            }
+
+            Self { region }
+        }
     }
 }
 
@@ -164,33 +167,35 @@ unsafe impl<const N: usize> Allocator for PoolAllocator<N> {
     }
 
     unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
-        // Using the bitmap to check if the ptr is aligned with our allocation state
-        let region_slice = unsafe { &*self.region.as_ptr() };
+        unsafe {
+            // Using the bitmap to check if the ptr is aligned with our allocation state
+            let region_slice = &*self.region.as_ptr();
 
-        let start_addr = region_slice.as_ptr() as usize; // Start address of the region
+            let start_addr = region_slice.as_ptr() as usize; // Start address of the region
 
-        // Get a pointer to the start of the bitmap, the bitmap starts 1 block away from the start
-        let bitmap_ptr = self.region.as_ptr().cast::<u8>().add(N);
+            // Get a pointer to the start of the bitmap, the bitmap starts 1 block away from the start
+            let bitmap_ptr = self.region.as_ptr().cast::<u8>().add(N);
 
-        // Find out which block it belongs to
-        let start_bit = (ptr.as_ptr() as usize - start_addr) / N;
+            // Find out which block it belongs to
+            let start_bit = (ptr.as_ptr() as usize - start_addr) / N;
 
-        // Sanity check: We should have layout.size() / N blocks starting from start_bit
-        for i in 0..layout.size().div_ceil(N) {
-            let byte_index = (start_bit + i) / 8;
-            let bit_pos = (start_bit + i) % 8;
-            if bitmap_ptr.add(byte_index).read() & (1 << bit_pos) == 0 {
-                panic!("Double free detected");
+            // Sanity check: We should have layout.size() / N blocks starting from start_bit
+            for i in 0..layout.size().div_ceil(N) {
+                let byte_index = (start_bit + i) / 8;
+                let bit_pos = (start_bit + i) % 8;
+                if bitmap_ptr.add(byte_index).read() & (1 << bit_pos) == 0 {
+                    panic!("Double free detected");
+                }
             }
-        }
 
-        // Mark the blocks as free
-        for i in 0..layout.size().div_ceil(N) {
-            let byte_index = (start_bit + i) / 8;
-            let bit_pos = (start_bit + i) % 8;
-            bitmap_ptr
-                .add(byte_index)
-                .write(bitmap_ptr.add(byte_index).read() & !(1 << bit_pos));
+            // Mark the blocks as free
+            for i in 0..layout.size().div_ceil(N) {
+                let byte_index = (start_bit + i) / 8;
+                let bit_pos = (start_bit + i) % 8;
+                bitmap_ptr
+                    .add(byte_index)
+                    .write(bitmap_ptr.add(byte_index).read() & !(1 << bit_pos));
+            }
         }
     }
 }

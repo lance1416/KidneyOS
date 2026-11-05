@@ -4,18 +4,19 @@ use crate::system::{running_thread_ppid, unwrap_system};
 use crate::threading::process::{Pid, ProcessState, Tid};
 use crate::user_program::elf::{ElfArchitecture, ElfProgramType, ElfUsage};
 use crate::{
+    Mutex,
     fs::fs_manager::FileSystemID,
-    mem::vma::{VMAInfo, VMAList, VMA},
+    kernel_allocator,
+    mem::vma::{VMA, VMAInfo, VMAList},
     paging::{PageManager, PageManagerDefault},
     user_program::elf::Elf,
     vfs::{INodeNum, OwnedPath},
-    Mutex, KERNEL_ALLOCATOR,
 };
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::{
     mem::size_of,
-    ptr::{copy_nonoverlapping, write_bytes, NonNull},
+    ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 use kidneyos_shared::mem::{OFFSET, PAGE_FRAME_SIZE};
 
@@ -169,7 +170,7 @@ impl ThreadControlBlock {
             unsafe {
                 // TODO: Save this physical address somewhere so we can deallocate
                 // it when dropping the thread.
-                let kernel_virt_addr = KERNEL_ALLOCATOR
+                let kernel_virt_addr = kernel_allocator()
                     .frame_alloc(frames)
                     .expect("no more frames...")
                     .cast::<u8>()
@@ -325,7 +326,7 @@ impl ThreadControlBlock {
         // so we must pass in the top of this memory to the thread.
         let (kernel_stack, kernel_stack_pointer_top);
         unsafe {
-            kernel_stack = KERNEL_ALLOCATOR
+            kernel_stack = kernel_allocator()
                 .frame_alloc(KERNEL_THREAD_STACK_FRAMES)
                 .expect("could not allocate kernel stack")
                 .cast::<u8>();

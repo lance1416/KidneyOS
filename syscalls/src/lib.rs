@@ -98,11 +98,7 @@ pub extern "C" fn lseek64(fd: i32, offset: i64, whence: i32) -> i64 {
             in("ebx") fd, in("ecx") core::ptr::addr_of_mut!(offset),
             in("edx") whence, lateout("eax") result);
     }
-    if result < 0 {
-        result.into()
-    } else {
-        offset
-    }
+    if result < 0 { result.into() } else { offset }
 }
 
 #[no_mangle]

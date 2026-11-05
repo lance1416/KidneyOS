@@ -7,20 +7,20 @@ use core::{arch::asm, ptr::NonNull};
 use kidneyos_shared::{
     global_descriptor_table,
     mem::{
+        OFFSET, PAGE_FRAME_SIZE,
         phys::{
             kernel_end, main_stack_top, trampoline_data_start, trampoline_end, trampoline_heap_top,
             trampoline_start,
         },
         pool_allocator::PoolAllocator,
-        OFFSET, PAGE_FRAME_SIZE,
     },
-    paging::{self, kernel_mapping_ranges, PageManager},
+    paging::{self, PageManager, kernel_mapping_ranges},
     println,
-    video_memory::{VIDEO_MEMORY_COLS, VIDEO_MEMORY_WRITER},
+    video_memory::{VIDEO_MEMORY_COLS, video_memory_writer},
 };
 use multiboot2::{
-    info::{Info, InfoTag},
     EXPECTED_MAGIC,
+    info::{Info, InfoTag},
 };
 
 #[cfg(target_os = "none")]
@@ -30,7 +30,7 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[cfg_attr(not(test), no_mangle)]
+#[cfg_attr(not(test), unsafe(no_mangle))]
 #[unsafe(naked)]
 unsafe extern "C" fn _start() {
     core::arch::naked_asm!(
@@ -48,75 +48,78 @@ unsafe extern "C" fn _start() {
 
 #[allow(dead_code)]
 unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
-    assert!(
-        magic == EXPECTED_MAGIC,
-        "invalid magic, expected {EXPECTED_MAGIC:#X}, got {magic:#X}"
-    );
+    unsafe {
+        assert!(
+            magic == EXPECTED_MAGIC,
+            "invalid magic, expected {EXPECTED_MAGIC:#X}, got {magic:#X}"
+        );
 
-    let mem_upper = (*multiboot2_info)
-        .iter()
-        .find_map(|tag| match tag {
-            InfoTag::BasicMemoryInfo(t) => Some(t.mem_upper),
-            _ => None,
-        })
-        .expect("Didn't find memory info!");
+        let mem_upper = (*multiboot2_info)
+            .iter()
+            .find_map(|tag| match tag {
+                InfoTag::BasicMemoryInfo(t) => Some(t.mem_upper),
+                _ => None,
+            })
+            .expect("Didn't find memory info!");
 
-    println!("Setting up GDTR");
-    global_descriptor_table::load();
-    println!("GDTR set up!");
+        println!("Setting up GDTR");
+        global_descriptor_table::load();
+        println!("GDTR set up!");
 
-    println!("Enabling paging");
+        println!("Enabling paging");
 
-    let pool_region = NonNull::slice_from_raw_parts(
-        NonNull::new(main_stack_top() as *mut u8).expect("main_stack_top shouldn't be null"),
-        trampoline_heap_top() - main_stack_top(),
-    );
-    let alloc = PoolAllocator::<PAGE_FRAME_SIZE>::new(pool_region);
-    let mut page_manager = PageManager::from_mapping_ranges_in(kernel_mapping_ranges(), alloc, 0);
+        let pool_region = NonNull::slice_from_raw_parts(
+            NonNull::new(main_stack_top() as *mut u8).expect("main_stack_top shouldn't be null"),
+            trampoline_heap_top() - main_stack_top(),
+        );
+        let alloc = PoolAllocator::<PAGE_FRAME_SIZE>::new(pool_region);
+        let mut page_manager =
+            PageManager::from_mapping_ranges_in(kernel_mapping_ranges(), alloc, 0);
 
-    // Trampoline mappings.
-    page_manager.id_map_range(
-        trampoline_start(),
-        trampoline_data_start() - trampoline_start(),
-        false,
-        false,
-    );
-    page_manager.id_map_range(
-        trampoline_data_start(),
-        trampoline_end() - trampoline_data_start(),
-        true,
-        false,
-    );
-    page_manager.id_map_range(kernel_end(), main_stack_top() - kernel_end(), true, false);
-    page_manager.id_map_range(
-        main_stack_top(),
-        trampoline_heap_top() - main_stack_top(),
-        true,
-        false,
-    );
+        // Trampoline mappings.
+        page_manager.id_map_range(
+            trampoline_start(),
+            trampoline_data_start() - trampoline_start(),
+            false,
+            false,
+        );
+        page_manager.id_map_range(
+            trampoline_data_start(),
+            trampoline_end() - trampoline_data_start(),
+            true,
+            false,
+        );
+        page_manager.id_map_range(kernel_end(), main_stack_top() - kernel_end(), true, false);
+        page_manager.id_map_range(
+            main_stack_top(),
+            trampoline_heap_top() - main_stack_top(),
+            true,
+            false,
+        );
 
-    page_manager.load();
-    paging::enable();
+        page_manager.load();
+        paging::enable();
 
-    println!("Paging enabled!");
+        println!("Paging enabled!");
 
-    println!("Starting kernel...");
+        println!("Starting kernel...");
 
-    extern "C" {
-        fn main(mem_upper: usize, video_memory_skip_lines: usize) -> !;
-    }
+        unsafe extern "C" {
+            fn main(mem_upper: usize, video_memory_skip_lines: usize) -> !;
+        }
 
-    asm!(
-        "
+        asm!(
+            "
         add esp, {offset} // make stack a kernel virtual address
         push {}
         push {}
         call {}
         ",
-        in(reg) VIDEO_MEMORY_WRITER.cursor.div_ceil(VIDEO_MEMORY_COLS),
-        in(reg) mem_upper as usize,
-        sym main,
-        offset = const OFFSET,
-        options(noreturn)
-    );
+            in(reg) video_memory_writer().cursor.div_ceil(VIDEO_MEMORY_COLS),
+            in(reg) mem_upper as usize,
+            sym main,
+            offset = const OFFSET,
+            options(noreturn)
+        );
+    }
 }

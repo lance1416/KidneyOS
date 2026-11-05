@@ -1,7 +1,7 @@
 // https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information-format
 
 use core::{
-    ffi::{c_char, CStr},
+    ffi::{CStr, c_char},
     mem::size_of,
     ptr::from_ref,
 };
@@ -89,7 +89,7 @@ pub struct InfoIterator<'a> {
 
 impl<'a> InfoIterator<'a> {
     const unsafe fn curr_ptr(&self) -> *const u8 {
-        from_ref(self.info).cast::<u8>().add(self.offset as usize)
+        unsafe { from_ref(self.info).cast::<u8>().add(self.offset as usize) }
     }
 
     const fn curr_headers(&self) -> &Headers {

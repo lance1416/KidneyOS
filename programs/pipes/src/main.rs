@@ -3,7 +3,7 @@
 
 use kidneyos_syscalls::EPIPE;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     let mut pipes = [0, 0];
 

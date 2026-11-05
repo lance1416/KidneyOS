@@ -17,16 +17,18 @@ const LSR: u16 = IO_BASE + 5; // Line Status Register (read-only)
 ///
 /// Wrapper for the assembly function out.
 pub unsafe fn outb(port: u16, byte: u8) {
-    asm!("out dx, al", in("dx") port, in("al") byte)
+    unsafe { asm!("out dx, al", in("dx") port, in("al") byte) }
 }
 
 /// # Safety
 ///
 /// Wrapper for the assembly function in.
 pub unsafe fn inb(port: u16) -> u8 {
-    let res: u8;
-    asm!("in al, dx", in("dx") port, out("al") res);
-    res
+    unsafe {
+        let res: u8;
+        asm!("in al, dx", in("dx") port, out("al") res);
+        res
+    }
 }
 
 /// Wrapper for assembly function insw - input from port to string.
@@ -38,20 +40,22 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// * The caller must ensure that the port is a valid port to read from.
 /// * They also need to ensure the buffer is valid and has enough space to store the data.
 pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
-    asm!(
-    // Save EDI to restore it after the insw instruction.
-    "push edi",
-    // Load the buffer address into EDI.
-    "mov edi, eax",
-    // Invoke `insw` instruction.
-    "rep insw",
-    // Restore EDI.
-    "pop edi",
-    in("dx") port,
-    in("eax") buffer,
-    in("ecx") count,
-    options(nostack, preserves_flags)
-    );
+    unsafe {
+        asm!(
+        // Save EDI to restore it after the insw instruction.
+        "push edi",
+        // Load the buffer address into EDI.
+        "mov edi, eax",
+        // Invoke `insw` instruction.
+        "rep insw",
+        // Restore EDI.
+        "pop edi",
+        in("dx") port,
+        in("eax") buffer,
+        in("ecx") count,
+        options(nostack, preserves_flags)
+        );
+    }
 }
 
 /// Wrapper for assembly function outsw - output string to port.
@@ -63,20 +67,22 @@ pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
 /// The caller must ensure that the port is a valid port to write to.
 /// They also need to ensure the buffer is valid and has appropriate size to write to the port.
 pub unsafe fn outsw(port: u16, buffer: *const u8, count: usize) {
-    asm!(
-    // Save ESI to restore it after the outsw instruction.
-    "push esi",
-    // Load the buffer address into ESI.
-    "mov esi, eax",
-    // Invoke `outsw` instruction.
-    "rep outsw",
-    // Restore ESI.
-    "pop esi",
-    in("dx") port,
-    in("eax") buffer,
-    in("ecx") count,
-    options(nostack, preserves_flags)
-    );
+    unsafe {
+        asm!(
+        // Save ESI to restore it after the outsw instruction.
+        "push esi",
+        // Load the buffer address into ESI.
+        "mov esi, eax",
+        // Invoke `outsw` instruction.
+        "rep outsw",
+        // Restore ESI.
+        "pop esi",
+        in("dx") port,
+        in("eax") buffer,
+        in("ecx") count,
+        options(nostack, preserves_flags)
+        );
+    }
 }
 
 impl SerialWriter {
@@ -134,4 +140,15 @@ impl fmt::Write for SerialWriter {
     }
 }
 
-pub static mut SERIAL_WRITER: SerialWriter = SerialWriter { initialized: false };
+static mut SERIAL_WRITER: SerialWriter = SerialWriter { initialized: false };
+
+/// Returns the global serial writer.
+///
+/// # Safety
+///
+/// The caller must ensure that no other reference to the writer is in use
+/// while the returned one is (e.g. single core and no interrupts).
+pub unsafe fn serial_writer() -> &'static mut SerialWriter {
+    // SAFETY: Exclusive access is guaranteed by the caller.
+    unsafe { &mut *&raw mut SERIAL_WRITER }
+}

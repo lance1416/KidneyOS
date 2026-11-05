@@ -7,7 +7,7 @@ use alloc::string::String;
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering::SeqCst;
 use kidneyos_shared::print;
-use kidneyos_shared::video_memory::VIDEO_MEMORY_WRITER;
+use kidneyos_shared::video_memory::video_memory_writer;
 
 pub static IS_SYSTEM_FULLY_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
@@ -31,7 +31,7 @@ pub extern "C" fn rush_loop() -> ! {
                 // Remove the previous character
                 if !buffer.is_empty() {
                     buffer.pop();
-                    unsafe { VIDEO_MEMORY_WRITER.backspace() };
+                    unsafe { video_memory_writer().backspace() };
                 }
             } else if input != b'\r' {
                 print!("{}", input as char);

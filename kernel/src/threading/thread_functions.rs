@@ -37,20 +37,22 @@ pub fn exit_thread(exit_code: i32) -> ! {
 }
 
 pub unsafe fn clean_up_thread(mut dying_thread: Box<ThreadControlBlock>) {
-    let threads = &unwrap_system().threads;
+    unsafe {
+        let threads = &unwrap_system().threads;
 
-    dying_thread.reap();
+        dying_thread.reap();
 
-    // Page manager must be loaded to be dropped.
-    dying_thread.page_manager.load();
-    drop(dying_thread);
-    threads
-        .running_thread
-        .lock()
-        .as_ref()
-        .unwrap()
-        .page_manager
-        .load();
+        // Page manager must be loaded to be dropped.
+        dying_thread.page_manager.load();
+        drop(dying_thread);
+        threads
+            .running_thread
+            .lock()
+            .as_ref()
+            .unwrap()
+            .page_manager
+            .load();
+    }
 }
 
 // Focibly stops the thread specified by Tid
@@ -65,49 +67,50 @@ unsafe extern "C" fn run_thread(
     switched_from: *mut ThreadControlBlock,
     switched_to: *mut ThreadControlBlock,
 ) -> ! {
-    let threads = &unwrap_system().threads;
-    let mut switched_to = Box::from_raw(switched_to);
+    unsafe {
+        let threads = &unwrap_system().threads;
+        let mut switched_to = Box::from_raw(switched_to);
 
-    // We assume that switched_from had its status changed already.
-    // We must only mark this thread as running.
-    switched_to.status = ThreadStatus::Running;
+        // We assume that switched_from had its status changed already.
+        // We must only mark this thread as running.
+        switched_to.status = ThreadStatus::Running;
 
-    TASK_STATE_SEGMENT.esp0 = switched_to.kernel_stack.as_ptr() as u32;
+        TASK_STATE_SEGMENT.esp0 = switched_to.kernel_stack.as_ptr() as u32;
 
-    let ThreadControlBlock {
-        eip,
-        esp,
-        is_kernel,
-        ..
-    } = *switched_to;
+        let ThreadControlBlock {
+            eip,
+            esp,
+            is_kernel,
+            ..
+        } = *switched_to;
 
-    // Reschedule our threads.
-    *threads.running_thread.lock() = Some(switched_to);
+        // Reschedule our threads.
+        *threads.running_thread.lock() = Some(switched_to);
 
-    let switched_from = Box::from_raw(switched_from);
+        let switched_from = Box::from_raw(switched_from);
 
-    if switched_from.status == ThreadStatus::Dying {
-        clean_up_thread(switched_from);
-    } else {
-        threads.scheduler.lock().push(switched_from);
-    }
+        if switched_from.status == ThreadStatus::Dying {
+            clean_up_thread(switched_from);
+        } else {
+            threads.scheduler.lock().push(switched_from);
+        }
 
-    // Our scheduler will operate without interrupts.
-    // Every new thread should start with them enabled.
-    intr_enable();
+        // Our scheduler will operate without interrupts.
+        // Every new thread should start with them enabled.
+        intr_enable();
 
-    // Kernel threads have no associated PCB, denoted by its PID being 0
-    if is_kernel {
-        let entry_function: ThreadFunction = unsafe { core::mem::transmute(eip.as_ptr()) };
-        let exit_code = entry_function();
+        // Kernel threads have no associated PCB, denoted by its PID being 0
+        if is_kernel {
+            let entry_function: ThreadFunction = core::mem::transmute(eip.as_ptr());
+            let exit_code = entry_function();
 
-        // Safely exit the thread.
-        exit_thread(exit_code);
-    } else {
-        // https://wiki.osdev.org/Getting_to_Ring_3#iret_method
-        // https://web.archive.org/web/20160326062442/http://jamesmolloy.co.uk/tutorial_html/10.-User%20Mode.html
-        asm!(
-            "
+            // Safely exit the thread.
+            exit_thread(exit_code);
+        } else {
+            // https://wiki.osdev.org/Getting_to_Ring_3#iret_method
+            // https://web.archive.org/web/20160326062442/http://jamesmolloy.co.uk/tutorial_html/10.-User%20Mode.html
+            asm!(
+                "
             mov ds, {data_sel:x}
             mov es, {data_sel:x}
             mov fs, {data_sel:x}
@@ -121,12 +124,13 @@ unsafe extern "C" fn run_thread(
             push {eip}
             iretd
             ",
-            data_sel = in(reg) USER_DATA_SELECTOR,
-            esp = in(reg) esp.as_ptr(),
-            code_sel = const USER_CODE_SELECTOR,
-            eip = in(reg) eip.as_ptr(),
-            options(noreturn),
-        )
+                data_sel = in(reg) USER_DATA_SELECTOR,
+                esp = in(reg) esp.as_ptr(),
+                code_sel = const USER_CODE_SELECTOR,
+                eip = in(reg) eip.as_ptr(),
+                options(noreturn),
+            )
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 
 use crate::{
     segment::{SegmentDescriptor, SegmentSelector},
-    task_state_segment::{TaskStateSegment, TASK_STATE_SEGMENT},
+    task_state_segment::{TASK_STATE_SEGMENT, TaskStateSegment},
 };
 use core::{arch::asm, mem::size_of, ptr::addr_of};
 
@@ -83,12 +83,13 @@ static mut GDT_DESCRIPTOR: GDTDescriptor = GDTDescriptor {
 /// Can only be executed within code that expects to have segments defined as
 /// they are above in GDT.
 pub unsafe fn load() {
-    GDT[TSS_INDEX] = GDT[TSS_INDEX].with_base(addr_of!(TASK_STATE_SEGMENT).cast::<u8>() as u32);
-    GDT_DESCRIPTOR.offset = GDT.as_ptr() as u32;
+    unsafe {
+        GDT[TSS_INDEX] = GDT[TSS_INDEX].with_base(addr_of!(TASK_STATE_SEGMENT).cast::<u8>() as u32);
+        GDT_DESCRIPTOR.offset = (&raw const GDT).cast::<SegmentDescriptor>() as u32;
 
-    // We need to use att_syntax since Rust doesn't appear to understand Intel long jump syntax...
-    asm!(
-        "
+        // We need to use att_syntax since Rust doesn't appear to understand Intel long jump syntax...
+        asm!(
+            "
         lgdt 0({0})
         ltr {1:x}
         ljmp ${code_selector}, $2f
@@ -100,10 +101,11 @@ pub unsafe fn load() {
         mov {0}, %gs
         mov {0}, %ss
         ",
-        in(reg) &GDT_DESCRIPTOR as *const _ as usize,
-        in(reg) TSS_SELECTOR,
-        code_selector = const KERNEL_CODE_SELECTOR,
-        data_selector = const KERNEL_DATA_SELECTOR,
-        options(att_syntax),
-    );
+            in(reg) &raw const GDT_DESCRIPTOR as usize,
+            in(reg) TSS_SELECTOR,
+            code_selector = const KERNEL_CODE_SELECTOR,
+            data_selector = const KERNEL_DATA_SELECTOR,
+            options(att_syntax),
+        );
+    }
 }

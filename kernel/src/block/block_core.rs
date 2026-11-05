@@ -1,7 +1,7 @@
 #![allow(dead_code)] // Suppress unused warnings
 
 use crate::block::block_error::BlockError;
-use crate::interrupts::{intr_get_level, IntrLevel};
+use crate::interrupts::{IntrLevel, intr_get_level};
 use crate::sync::mutex::Mutex;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
@@ -270,7 +270,7 @@ impl fmt::Display for BlockManager {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use std::io::{prelude::*, SeekFrom};
+    use std::io::{SeekFrom, prelude::*};
     fn seek_offset(sector: BlockSector) -> SeekFrom {
         SeekFrom::Start(sector as u64 * BLOCK_SECTOR_SIZE as u64)
     }

@@ -11,12 +11,12 @@ macro_rules! linker_offsets {
         $(
         #[inline]
         pub fn $name() -> usize {
-            extern "C" {
+            unsafe extern "C" {
                 static $name: u8;
             }
 
-            // SAFETY: The linker script will give this the correct address.
-            unsafe { core::ptr::addr_of!($name) as usize }
+            // The linker script will give this the correct address.
+            &raw const $name as usize
         }
         )*
     }

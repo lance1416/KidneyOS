@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-use crate::interrupts::mutex_irq::hold_interrupts;
 use crate::interrupts::IntrLevel;
+use crate::interrupts::mutex_irq::hold_interrupts;
 use crate::sync::mutex::TicketMutex;
 use crate::system::unwrap_system;
 use crate::threading::process::Tid;

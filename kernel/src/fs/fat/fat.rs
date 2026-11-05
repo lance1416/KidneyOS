@@ -1,5 +1,5 @@
-use crate::block::block_core::{Block, BLOCK_SECTOR_SIZE};
-use crate::fs::fat::{error, FatType};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block};
+use crate::fs::fat::{FatType, error};
 use crate::vfs::Result;
 use alloc::{collections::BTreeSet, vec, vec::Vec};
 use zerocopy::AsBytes;

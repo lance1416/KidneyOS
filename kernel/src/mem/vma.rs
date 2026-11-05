@@ -1,7 +1,7 @@
 use crate::fs::fs_manager::FileSystemID;
+use crate::kernel_allocator;
 use crate::system::unwrap_system;
 use crate::vfs::INodeNum;
-use crate::KERNEL_ALLOCATOR;
 use alloc::collections::BTreeMap;
 use kidneyos_shared::mem::{OFFSET, PAGE_FRAME_SIZE};
 
@@ -73,54 +73,56 @@ impl VMA {
     }
     #[must_use]
     unsafe fn install_in_page_table(&self, virt_addr: usize, offset: usize) -> bool {
-        debug_assert_eq!(virt_addr % PAGE_FRAME_SIZE, 0);
-        debug_assert_eq!(offset % PAGE_FRAME_SIZE, 0);
-        let Ok(frame_ptr) = (unsafe { KERNEL_ALLOCATOR.frame_alloc(1) }) else {
-            return false;
-        };
-        let frame_ptr = frame_ptr.as_ptr();
-        let phys_addr = frame_ptr as usize - OFFSET;
-        let mut tcb_guard = unwrap_system().threads.running_thread.lock();
-        let tcb = tcb_guard.as_mut().expect("no running thread");
-        tcb.page_manager
-            .map(phys_addr, virt_addr, self.writeable(), true);
-        drop(tcb_guard);
-        // important we don't use the virtual address here since it may be read-only!
-        let data = core::slice::from_raw_parts_mut(frame_ptr, PAGE_FRAME_SIZE);
-        match &self.info {
-            VMAInfo::Stack | VMAInfo::Heap => {
-                // zero memory, to prevent data from being leaked between processes.
-                data.fill(0);
-                true
-            }
-            VMAInfo::MMap { fs, inode, offset } => {
-                let fs = *fs;
-                let inode = *inode;
-                let offset = u64::from(*offset) * PAGE_FRAME_SIZE as u64;
-                let mut root = unwrap_system().root_filesystem.lock();
-                let mut bytes_read = 0;
-                while bytes_read < PAGE_FRAME_SIZE {
-                    let n = match root.read_direct(
-                        fs,
-                        inode,
-                        offset + bytes_read as u64,
-                        &mut data[bytes_read..],
-                    ) {
-                        Ok(0) => {
-                            break;
-                        }
-                        Ok(n) => n,
-                        // Generate page fault if reading data from mmapped file fails.
-                        // This seems to be consistent with other OSes (some do a bus error instead)
-                        Err(_) => {
-                            return false;
-                        }
-                    };
-                    bytes_read += n;
+        unsafe {
+            debug_assert_eq!(virt_addr % PAGE_FRAME_SIZE, 0);
+            debug_assert_eq!(offset % PAGE_FRAME_SIZE, 0);
+            let Ok(frame_ptr) = kernel_allocator().frame_alloc(1) else {
+                return false;
+            };
+            let frame_ptr = frame_ptr.as_ptr();
+            let phys_addr = frame_ptr as usize - OFFSET;
+            let mut tcb_guard = unwrap_system().threads.running_thread.lock();
+            let tcb = tcb_guard.as_mut().expect("no running thread");
+            tcb.page_manager
+                .map(phys_addr, virt_addr, self.writeable(), true);
+            drop(tcb_guard);
+            // important we don't use the virtual address here since it may be read-only!
+            let data = core::slice::from_raw_parts_mut(frame_ptr, PAGE_FRAME_SIZE);
+            match &self.info {
+                VMAInfo::Stack | VMAInfo::Heap => {
+                    // zero memory, to prevent data from being leaked between processes.
+                    data.fill(0);
+                    true
                 }
-                // if we reached the end of the file, fill the rest of the page with zeros.
-                data[bytes_read..].fill(0);
-                true
+                VMAInfo::MMap { fs, inode, offset } => {
+                    let fs = *fs;
+                    let inode = *inode;
+                    let offset = u64::from(*offset) * PAGE_FRAME_SIZE as u64;
+                    let mut root = unwrap_system().root_filesystem.lock();
+                    let mut bytes_read = 0;
+                    while bytes_read < PAGE_FRAME_SIZE {
+                        let n = match root.read_direct(
+                            fs,
+                            inode,
+                            offset + bytes_read as u64,
+                            &mut data[bytes_read..],
+                        ) {
+                            Ok(0) => {
+                                break;
+                            }
+                            Ok(n) => n,
+                            // Generate page fault if reading data from mmapped file fails.
+                            // This seems to be consistent with other OSes (some do a bus error instead)
+                            Err(_) => {
+                                return false;
+                            }
+                        };
+                        bytes_read += n;
+                    }
+                    // if we reached the end of the file, fill the rest of the page with zeros.
+                    data[bytes_read..].fill(0);
+                    true
+                }
             }
         }
     }
@@ -160,12 +162,14 @@ impl VMAList {
     /// `addr` must be currently unmapped.
     #[must_use]
     pub unsafe fn install_pte(&self, addr: usize) -> bool {
-        // round down to page
-        let addr = addr & !(PAGE_FRAME_SIZE - 1);
-        let Some((vma_addr, vma)) = self.vma_at(addr) else {
-            return false;
-        };
-        vma.install_in_page_table(addr, addr - vma_addr)
+        unsafe {
+            // round down to page
+            let addr = addr & !(PAGE_FRAME_SIZE - 1);
+            let Some((vma_addr, vma)) = self.vma_at(addr) else {
+                return false;
+            };
+            vma.install_in_page_table(addr, addr - vma_addr)
+        }
     }
     /// Add a VMA to the list.
     ///

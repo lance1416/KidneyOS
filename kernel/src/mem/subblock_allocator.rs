@@ -120,20 +120,22 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
     ///
     /// TODO: Reclaim fully freed frames from free subblocks
     pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
-        let subblock_size_index = get_best_subblock_size_idx(layout);
+        unsafe {
+            let subblock_size_index = get_best_subblock_size_idx(layout);
 
-        if subblock_size_index == SUBBLOCK_TYPE_COUNT {
-            self.frame_allocator.dealloc(NonNull::new(ptr).unwrap());
-        } else {
-            assert!(size_of::<ListNode>() <= SUBBLOCK_SIZES[subblock_size_index]);
+            if subblock_size_index == SUBBLOCK_TYPE_COUNT {
+                self.frame_allocator.dealloc(NonNull::new(ptr).unwrap());
+            } else {
+                assert!(size_of::<ListNode>() <= SUBBLOCK_SIZES[subblock_size_index]);
 
-            let new_node = ListNode {
-                next: self.list_heads[subblock_size_index].take(),
-            };
+                let new_node = ListNode {
+                    next: self.list_heads[subblock_size_index].take(),
+                };
 
-            let new_node_ptr = ptr as *mut ListNode;
-            new_node_ptr.write(new_node);
-            self.list_heads[subblock_size_index] = Some(&mut *new_node_ptr);
+                let new_node_ptr = ptr as *mut ListNode;
+                new_node_ptr.write(new_node);
+                self.list_heads[subblock_size_index] = Some(&mut *new_node_ptr);
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::block::block_core::{BlockOp, BlockSector, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, BlockOp, BlockSector};
 use crate::block::block_error::BlockError;
 use crate::drivers::ata::ata_channel::AtaChannel;
 use crate::drivers::ata::ata_core::CHANNELS;
@@ -33,24 +33,26 @@ impl BlockOp for AtaDevice {
     ///
     /// This function must be called with interrupts enabled
     unsafe fn read(&mut self, sector: BlockSector, buf: &mut [u8]) -> Result<(), BlockError> {
-        assert_eq!(buf.len(), BLOCK_SECTOR_SIZE); // Checked by block layer, should never fail
+        unsafe {
+            assert_eq!(buf.len(), BLOCK_SECTOR_SIZE); // Checked by block layer, should never fail
 
-        let channel: &mut AtaChannel = &mut CHANNELS[self.get_channel() as usize].lock();
+            let channel: &mut AtaChannel = &mut CHANNELS[self.get_channel() as usize].lock();
 
-        channel.select_sector(self.get_device_num(), sector, true);
-        channel.issue_pio_command(crate::drivers::ata::ata_core::ATA_READ_SECTOR_RETRY);
+            channel.select_sector(self.get_device_num(), sector, true);
+            channel.issue_pio_command(crate::drivers::ata::ata_core::ATA_READ_SECTOR_RETRY);
 
-        // TODO: find a better way to resolve race condition
-        usleep(1000, true);
+            // TODO: find a better way to resolve race condition
+            usleep(1000, true);
 
-        channel.sem_down();
-        if !channel.wait_while_busy(true) {
-            // println!("Read failed on sector {}.", sector);
-            return Err(BlockError::ReadError);
+            channel.sem_down();
+            if !channel.wait_while_busy(true) {
+                // println!("Read failed on sector {}.", sector);
+                return Err(BlockError::ReadError);
+            }
+            channel.read_sector(buf);
+
+            Ok(())
         }
-        channel.read_sector(buf);
-
-        Ok(())
     }
 
     /// Write sector `sector` to the disk from `buf`, which must contain BLOCK_SECTOR_SIZE bytes.
@@ -63,20 +65,22 @@ impl BlockOp for AtaDevice {
     ///
     /// This function must be called with interrupts enabled
     unsafe fn write(&mut self, sector: BlockSector, buf: &[u8]) -> Result<(), BlockError> {
-        assert_eq!(buf.len(), BLOCK_SECTOR_SIZE); // Checked by block layer, should never fail
+        unsafe {
+            assert_eq!(buf.len(), BLOCK_SECTOR_SIZE); // Checked by block layer, should never fail
 
-        let channel: &mut AtaChannel = &mut CHANNELS[self.get_channel() as usize].lock();
+            let channel: &mut AtaChannel = &mut CHANNELS[self.get_channel() as usize].lock();
 
-        channel.select_sector(self.get_device_num(), sector, true);
-        channel.issue_pio_command(crate::drivers::ata::ata_core::ATA_WRITE_SECTOR_RETRY);
+            channel.select_sector(self.get_device_num(), sector, true);
+            channel.issue_pio_command(crate::drivers::ata::ata_core::ATA_WRITE_SECTOR_RETRY);
 
-        if !channel.wait_while_busy(true) {
-            // println!("Write failed on sector {}.", sec_no);
-            return Err(BlockError::WriteError);
+            if !channel.wait_while_busy(true) {
+                // println!("Write failed on sector {}.", sec_no);
+                return Err(BlockError::WriteError);
+            }
+            channel.write_sector(buf);
+            channel.sem_down();
+
+            Ok(())
         }
-        channel.write_sector(buf);
-        channel.sem_down();
-
-        Ok(())
     }
 }

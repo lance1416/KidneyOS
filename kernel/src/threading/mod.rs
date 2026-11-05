@@ -12,7 +12,7 @@ use crate::system::unwrap_system;
 use crate::threading::scheduling::Scheduler;
 use crate::user_program::elf::Elf;
 use crate::{
-    interrupts::{intr_enable, intr_get_level, IntrLevel},
+    interrupts::{IntrLevel, intr_enable, intr_get_level},
     paging::PageManager,
     threading::scheduling::create_scheduler,
 };

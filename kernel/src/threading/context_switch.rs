@@ -1,5 +1,5 @@
 use crate::{
-    interrupts::{intr_get_level, IntrLevel},
+    interrupts::{IntrLevel, intr_get_level},
     threading::thread_functions::clean_up_thread,
 };
 use core::mem::offset_of;
@@ -16,50 +16,52 @@ pub unsafe fn switch_threads(
     status_for_current_thread: ThreadStatus,
     switch_to: Box<ThreadControlBlock>,
 ) {
-    assert_eq!(intr_get_level(), IntrLevel::IntrOff);
-    let threads = &unwrap_system().threads;
+    unsafe {
+        assert_eq!(intr_get_level(), IntrLevel::IntrOff);
+        let threads = &unwrap_system().threads;
 
-    let switch_from = Box::into_raw(
-        threads
-            .running_thread
-            .lock()
-            .take()
-            .expect("Why is nothing running!?"),
-    );
-    let switch_to = Box::into_raw(switch_to);
+        let switch_from = Box::into_raw(
+            threads
+                .running_thread
+                .lock()
+                .take()
+                .expect("Why is nothing running!?"),
+        );
+        let switch_to = Box::into_raw(switch_to);
 
-    // Ensure we are switching to a valid thread.
-    assert_eq!(
-        (*switch_to).status,
-        ThreadStatus::Ready,
-        "Cannot switch to a non-ready thread."
-    );
+        // Ensure we are switching to a valid thread.
+        assert_eq!(
+            (*switch_to).status,
+            ThreadStatus::Ready,
+            "Cannot switch to a non-ready thread."
+        );
 
-    // Ensure that the previous thread is running.
-    assert_eq!(
-        (*switch_from).status,
-        ThreadStatus::Running,
-        "The thread to switch out of must be in the running state."
-    );
+        // Ensure that the previous thread is running.
+        assert_eq!(
+            (*switch_from).status,
+            ThreadStatus::Running,
+            "The thread to switch out of must be in the running state."
+        );
 
-    // Update the status of the current thread.
-    (*switch_from).status = status_for_current_thread;
+        // Update the status of the current thread.
+        (*switch_from).status = status_for_current_thread;
 
-    let page_manager = &(*switch_to).page_manager;
-    page_manager.load();
+        let page_manager = &(*switch_to).page_manager;
+        page_manager.load();
 
-    let previous = Box::from_raw(context_switch(switch_from, switch_to));
+        let previous = Box::from_raw(context_switch(switch_from, switch_to));
 
-    // We must mark this thread as running once again.
-    (*switch_from).status = ThreadStatus::Running;
+        // We must mark this thread as running once again.
+        (*switch_from).status = ThreadStatus::Running;
 
-    // After threads have switched, we must update the scheduler and running thread.
-    *threads.running_thread.lock() = Some(Box::from_raw(switch_from));
+        // After threads have switched, we must update the scheduler and running thread.
+        *threads.running_thread.lock() = Some(Box::from_raw(switch_from));
 
-    if previous.status == ThreadStatus::Dying {
-        clean_up_thread(previous);
-    } else {
-        threads.scheduler.lock().push(previous);
+        if previous.status == ThreadStatus::Dying {
+            clean_up_thread(previous);
+        } else {
+            threads.scheduler.lock().push(previous);
+        }
     }
 }
 

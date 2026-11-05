@@ -4,17 +4,17 @@
 
 use crate::fs::fs_manager::RootFileSystem;
 use crate::fs::{
-    fs_manager::{Mode, SeekFrom},
     FileDescriptor, ProcessFileDescriptor,
+    fs_manager::{Mode, SeekFrom},
 };
 use crate::mem::util::{
-    get_cstr_from_user_space, get_mut_from_user_space, get_mut_slice_from_user_space,
-    get_slice_from_user_space, CStrError,
+    CStrError, get_cstr_from_user_space, get_mut_from_user_space, get_mut_slice_from_user_space,
+    get_slice_from_user_space,
 };
 use crate::system::{root_filesystem, running_process, running_thread_pid};
 use crate::user_program::syscall::{
-    Dirent, Stat, EBADF, EFAULT, EINVAL, ENODEV, ENOENT, ENOMEM, ERANGE, O_CREATE, PROT_EXEC,
-    PROT_READ, PROT_WRITE, SEEK_CUR, SEEK_END, SEEK_SET,
+    Dirent, EBADF, EFAULT, EINVAL, ENODEV, ENOENT, ENOMEM, ERANGE, O_CREATE, PROT_EXEC, PROT_READ,
+    PROT_WRITE, SEEK_CUR, SEEK_END, SEEK_SET, Stat,
 };
 use crate::vfs::tempfs::TempFS;
 use kidneyos_shared::mem::PAGE_FRAME_SIZE;
@@ -432,7 +432,9 @@ pub fn mmap(
     fd: i32,
     offset: i64,
 ) -> isize {
-    crate::println!("mmap fd={fd} addr={addr:?} length={length} prot={prot:#x} flags={flags:#x} offset={offset}");
+    crate::println!(
+        "mmap fd={fd} addr={addr:?} length={length} prot={prot:#x} flags={flags:#x} offset={offset}"
+    );
     let addr = addr as usize;
     let _ = flags; // TODO: anonymous mapping
     if (prot & PROT_READ) == 0 {

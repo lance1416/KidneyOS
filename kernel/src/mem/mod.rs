@@ -17,9 +17,9 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use dummy_allocator::DummyAllocatorSolution;
-use frame_allocator::{placement_algorithms::NextFit, CoreMapEntry, FrameAllocatorSolution};
+use frame_allocator::{CoreMapEntry, FrameAllocatorSolution, placement_algorithms::NextFit};
 use kidneyos_shared::{
-    mem::{virt::trampoline_heap_top, BOOTSTRAP_ALLOCATOR_SIZE, OFFSET, PAGE_FRAME_SIZE},
+    mem::{BOOTSTRAP_ALLOCATOR_SIZE, OFFSET, PAGE_FRAME_SIZE, virt::trampoline_heap_top},
     sizes::{KB, MB},
 };
 use subblock_allocator::SubblockAllocatorSolution;
@@ -191,67 +191,77 @@ impl KernelAllocator {
 // - We never rely on allocations happening.
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if FIRST_ALLOCATION.load(Ordering::Relaxed) {
-            // If we are here, it should be the dummy allocator doing the allocation
-            let KernelAllocatorState::SetupState { dummy_allocator } = &mut *self.state.get()
-            else {
-                halt!("[KERNEL ALLOCATOR]: Kernel initialized before Coremap Entries created")
-            };
+        unsafe {
+            if FIRST_ALLOCATION.load(Ordering::Relaxed) {
+                // If we are here, it should be the dummy allocator doing the allocation
+                let KernelAllocatorState::SetupState { dummy_allocator } = &mut *self.state.get()
+                else {
+                    halt!("[KERNEL ALLOCATOR]: Kernel initialized before Coremap Entries created")
+                };
 
-            let size = layout.size();
-            let align = layout.align();
+                let size = layout.size();
+                let align = layout.align();
 
-            // The alignment of the layout should never be larger than the size of a page
-            if align > MAX_SUPPORTED_ALIGN {
-                return ptr::null_mut();
+                // The alignment of the layout should never be larger than the size of a page
+                if align > MAX_SUPPORTED_ALIGN {
+                    return ptr::null_mut();
+                }
+
+                let num_frames_requested =
+                    ((size + align).next_multiple_of(PAGE_FRAME_SIZE)) / PAGE_FRAME_SIZE;
+
+                let Ok(region) = dummy_allocator.alloc(num_frames_requested) else {
+                    halt!(
+                        "[KERNEL ALLOCATOR]: Unable to allocate memory according to provided layout in DummyAllocator"
+                    );
+                };
+
+                // We should never use dummy allocator again
+                FIRST_ALLOCATION.store(false, Ordering::Relaxed);
+
+                region.as_ptr().cast::<u8>()
+            } else {
+                let KernelAllocatorState::Initialized {
+                    subblock_allocator, ..
+                } = &mut *self.state.get()
+                else {
+                    halt!("[KERNEL ALLOCATOR]: Allocation requested before kernel is Initialized");
+                };
+
+                // The alignment of the layout should never be larger than the size of a page
+                if layout.align() > MAX_SUPPORTED_ALIGN {
+                    return ptr::null_mut();
+                }
+
+                // Allocate using subblock allocator
+                let ret_ptr = match subblock_allocator.allocate(layout) {
+                    Ok(t) => t,
+                    Err(_) => halt!(
+                        "[KERNEL ALLOCATOR]: Unable to allocate memory according to provided layout in SubblockAllocator"
+                    ),
+                };
+
+                TOTAL_NUM_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+
+                ret_ptr
             }
-
-            let num_frames_requested =
-                ((size + align).next_multiple_of(PAGE_FRAME_SIZE)) / PAGE_FRAME_SIZE;
-
-            let Ok(region) = dummy_allocator.alloc(num_frames_requested) else {
-                halt!("[KERNEL ALLOCATOR]: Unable to allocate memory according to provided layout in DummyAllocator");
-            };
-
-            // We should never use dummy allocator again
-            FIRST_ALLOCATION.store(false, Ordering::Relaxed);
-
-            region.as_ptr().cast::<u8>()
-        } else {
-            let KernelAllocatorState::Initialized {
-                subblock_allocator, ..
-            } = &mut *self.state.get()
-            else {
-                halt!("[KERNEL ALLOCATOR]: Allocation requested before kernel is Initialized");
-            };
-
-            // The alignment of the layout should never be larger than the size of a page
-            if layout.align() > MAX_SUPPORTED_ALIGN {
-                return ptr::null_mut();
-            }
-
-            // Allocate using subblock allocator
-            let ret_ptr = match subblock_allocator.allocate(layout) {
-                Ok(t) => t,
-                Err(_) => halt!("[KERNEL ALLOCATOR]: Unable to allocate memory according to provided layout in SubblockAllocator"),
-            };
-
-            TOTAL_NUM_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-
-            ret_ptr
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        let KernelAllocatorState::Initialized {
-            subblock_allocator, ..
-        } = &mut *self.state.get()
-        else {
-            halt!("[KERNEL ALLOCATOR]: dealloc called before initialization of kernel allocator");
-        };
+        unsafe {
+            let KernelAllocatorState::Initialized {
+                subblock_allocator, ..
+            } = &mut *self.state.get()
+            else {
+                halt!(
+                    "[KERNEL ALLOCATOR]: dealloc called before initialization of kernel allocator"
+                );
+            };
 
-        subblock_allocator.deallocate(ptr, layout);
+            subblock_allocator.deallocate(ptr, layout);
 
-        TOTAL_NUM_DEALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+            TOTAL_NUM_DEALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }

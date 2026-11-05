@@ -7,7 +7,7 @@ pub use scheduler::Scheduler;
 use alloc::boxed::Box;
 
 use super::{context_switch::switch_threads, thread_control_block::ThreadStatus};
-use crate::interrupts::{intr_get_level, mutex_irq::hold_interrupts, IntrLevel};
+use crate::interrupts::{IntrLevel, intr_get_level, mutex_irq::hold_interrupts};
 use crate::system::unwrap_system;
 
 pub fn create_scheduler() -> Box<dyn Scheduler + Send> {

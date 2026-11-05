@@ -3,9 +3,9 @@ use crate::drivers::input::input_core::InputBuffer;
 use crate::fs::fs_manager::RootFileSystem;
 use crate::sync::mutex::Mutex;
 use crate::sync::rwlock::sleep::RwLock;
+use crate::threading::ThreadState;
 use crate::threading::process::{Pid, ProcessState, Tid};
 use crate::threading::thread_control_block::ProcessControlBlock;
-use crate::threading::ThreadState;
 use alloc::sync::Arc;
 
 pub struct SystemState {
@@ -44,14 +44,14 @@ pub fn init_system(state: SystemState) {
     //   - only one thread can successfully exchange UNINITIALIZED with INITIALIZING
     //   - no threads can have references to the system since unwrap_system()
     //     requires SYSTEM_STATE to be set to INITIALIZED
-    unsafe { SYSTEM.write(state) };
+    unsafe { (*&raw mut SYSTEM).write(state) };
     SYSTEM_STATE.store(INITIALIZED, core::sync::atomic::Ordering::Release);
 }
 
 pub fn unwrap_system() -> &'static SystemState {
     if SYSTEM_STATE.load(core::sync::atomic::Ordering::Acquire) == INITIALIZED {
         // SAFETY: since SYSTEM_STATE = INITIALIZED, the SYSTEM has been initialized.
-        unsafe { SYSTEM.assume_init_ref() }
+        unsafe { (*&raw const SYSTEM).assume_init_ref() }
     } else {
         panic!("System not initialized.");
     }

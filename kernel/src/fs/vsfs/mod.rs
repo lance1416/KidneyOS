@@ -1,4 +1,4 @@
-use crate::block::block_core::{Block, BLOCK_SECTOR_SIZE};
+use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block};
 use crate::vfs::{
     DirEntries, Error, FileInfo, INodeNum, INodeType, Path, RawDirEntry, Result, SimpleFileSystem,
 };

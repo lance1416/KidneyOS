@@ -9,7 +9,7 @@ const TARGET_PROGRAM: &[u8] =
 
 const TARGET_PATH: *const c_char = c"/example_rust".as_ptr();
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     // TempFS - We'll create the file that we want to execute on the fly.
     let fd = kidneyos_syscalls::open(TARGET_PATH, O_CREATE);

@@ -1,6 +1,6 @@
 use crate::fs::pipe::{PipeInner, PipeReadEnd, PipeWriteEnd};
 use crate::fs::{FileDescriptor, ProcessFileDescriptor};
-use crate::mem::vma::{VMAInfo, VMA};
+use crate::mem::vma::{VMA, VMAInfo};
 use crate::sync::mutex::Mutex;
 use crate::system::{running_process, unwrap_system};
 use crate::threading::{process::Pid, thread_control_block::ProcessControlBlock};
@@ -13,7 +13,7 @@ use alloc::borrow::Cow;
 use alloc::sync::Arc;
 use alloc::{
     boxed::Box,
-    collections::{btree_map::Entry as BTreeMapEntry, BTreeMap},
+    collections::{BTreeMap, btree_map::Entry as BTreeMapEntry},
     format,
     string::String,
     vec,
@@ -182,7 +182,8 @@ impl Directory {
                 name_ptr.add(name.len()).write(0); // null terminator
             }
             size -= required_bytes;
-            output = output.add(required_bytes);
+            // SAFETY: The caller guarantees that `output` has room for `size` bytes.
+            output = unsafe { output.add(required_bytes) };
             bytes_read += required_bytes;
             *offset = off + 1;
         }
@@ -211,7 +212,9 @@ struct TempOpen<F: FileSystem> {
 
 impl<F: FileSystem> Drop for TempOpen<F> {
     fn drop(&mut self) {
-        panic!("temporarily-open file dropped — make sure you call FileSystemManager::temp_close instead!")
+        panic!(
+            "temporarily-open file dropped — make sure you call FileSystemManager::temp_close instead!"
+        )
     }
 }
 
@@ -546,14 +549,16 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
         entries: *mut Dirent,
         size: usize,
     ) -> Result<usize> {
-        let inode = self.open_files.get(&dir).ok_or(Error::BadFd)?.inode();
-        // ensure directory entries are loaded
-        let _ = self.lookup(inode, "x");
-        let dir = self.directories.get(&inode).ok_or(Error::NotDirectory)?;
-        if dir.entries.is_none() {
-            return Err(Error::IO("failed to read directory entries".into()));
+        unsafe {
+            let inode = self.open_files.get(&dir).ok_or(Error::BadFd)?.inode();
+            // ensure directory entries are loaded
+            let _ = self.lookup(inode, "x");
+            let dir = self.directories.get(&inode).ok_or(Error::NotDirectory)?;
+            if dir.entries.is_none() {
+                return Err(Error::IO("failed to read directory entries".into()));
+            }
+            dir.getdents(offset, entries, size)
         }
-        dir.getdents(offset, entries, size)
     }
     fn link(&mut self, source: INodeNum, parent: INodeNum, name: &Path) -> Result<()> {
         if name.is_empty() || name == "." || name == ".." {
@@ -1094,9 +1099,9 @@ impl RootFileSystem {
             OpenFile::StdOut => {
                 use core::fmt::Write;
                 let string = String::from_utf8_lossy(buf);
-                // SAFETY: no other mut references to VIDEO_MEMORY_WRITER here
+                // SAFETY: no other mut references to the video memory writer here
                 let result = unsafe {
-                    kidneyos_shared::video_memory::VIDEO_MEMORY_WRITER.write_str(&string)
+                    kidneyos_shared::video_memory::video_memory_writer().write_str(&string)
                 };
                 if let Err(e) = result {
                     Err(Error::IO(format!("{e}")))
@@ -1317,19 +1322,21 @@ impl RootFileSystem {
         output: *mut Dirent,
         size: usize,
     ) -> Result<usize> {
-        let file_info = self.open_files.get_mut(&fd).ok_or(Error::BadFd)?;
-        match file_info {
-            OpenFile::Regular {
-                fs,
-                offset,
-                is_dir: true,
-                ..
-            } => {
-                let fs = self.file_systems.get_mut(*fs);
-                let read_count = fs.getdents(fd, offset, output, size)?;
-                Ok(read_count)
+        unsafe {
+            let file_info = self.open_files.get_mut(&fd).ok_or(Error::BadFd)?;
+            match file_info {
+                OpenFile::Regular {
+                    fs,
+                    offset,
+                    is_dir: true,
+                    ..
+                } => {
+                    let fs = self.file_systems.get_mut(*fs);
+                    let read_count = fs.getdents(fd, offset, output, size)?;
+                    Ok(read_count)
+                }
+                _ => Err(Error::NotDirectory),
             }
-            _ => Err(Error::NotDirectory),
         }
     }
 

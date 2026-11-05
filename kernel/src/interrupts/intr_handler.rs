@@ -26,15 +26,19 @@ pub unsafe extern "C" fn unhandled_handler() -> ! {
 #[unsafe(naked)]
 pub unsafe extern "C" fn page_fault_handler() -> ! {
     unsafe fn inner(error_code: u32, return_eip: usize) {
-        let vaddr: usize;
-        asm!("mov {}, cr2", out(reg) vaddr);
-        // important: re-enable interrupts before acquiring lock to prevent deadlock
-        intr_enable();
-        let pcb = running_process();
-        let pcb = pcb.lock();
-        // try checking for a VMA matching this address
-        if !pcb.vmas.install_pte(vaddr) {
-            panic!("page fault with error code {error_code:#b} occurred when trying to access {vaddr:#X} from instruction at {return_eip:#X}");
+        unsafe {
+            let vaddr: usize;
+            asm!("mov {}, cr2", out(reg) vaddr);
+            // important: re-enable interrupts before acquiring lock to prevent deadlock
+            intr_enable();
+            let pcb = running_process();
+            let pcb = pcb.lock();
+            // try checking for a VMA matching this address
+            if !pcb.vmas.install_pte(vaddr) {
+                panic!(
+                    "page fault with error code {error_code:#b} occurred when trying to access {vaddr:#X} from instruction at {return_eip:#X}"
+                );
+            }
         }
     }
 
@@ -61,7 +65,9 @@ pub unsafe extern "C" fn page_fault_handler() -> ! {
 #[unsafe(naked)]
 pub unsafe extern "C" fn general_protection_fault_handler() -> ! {
     unsafe fn inner(error_code: u32, return_eip: usize) -> ! {
-        panic!("general protection fault with error code {error_code:#b} occurred from instruction at {return_eip:#X}");
+        panic!(
+            "general protection fault with error code {error_code:#b} occurred from instruction at {return_eip:#X}"
+        );
     }
 
     core::arch::naked_asm!(
