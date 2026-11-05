@@ -1,1 +1,10 @@
-/Cargo.lock -diff
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.img binary
+*.disk binary
+*.gz binary
+Cargo.lock linguist-generated=true
+**/Cargo.lock linguist-generated=true
+nix/flake.lock linguist-generated=true
+syscalls/include/kidneyos.h linguist-generated=true
+kernel/tests/** linguist-vendored=true
