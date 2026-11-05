@@ -14,7 +14,7 @@ use crate::system::unwrap_system;
 use alloc::boxed::Box;
 use alloc::string::String;
 use kidneyos_shared::println;
-use lazy_static::lazy_static;
+use spin::LazyLock;
 
 // Commands ----------------------------------------------------------------------------------------
 // Reference: https://wiki.osdev.org/ATA_Command_Matrix
@@ -31,12 +31,12 @@ pub const ATA_IDENTIFY_DEVICE: u8 = 0xEC;
 /// Number of ATA channels
 const CHANNEL_CNT: usize = 2;
 
-lazy_static! {
-    pub static ref CHANNELS: [SleepMutex<AtaChannel>; CHANNEL_CNT] = [
+pub static CHANNELS: LazyLock<[SleepMutex<AtaChannel>; CHANNEL_CNT]> = LazyLock::new(|| {
+    [
         SleepMutex::new(AtaChannel::new(0)),
         SleepMutex::new(AtaChannel::new(1)),
-    ];
-}
+    ]
+});
 
 // -------------------------------------------------------------------------------------------------
 

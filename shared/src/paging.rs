@@ -19,8 +19,8 @@ use core::{
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
-use lazy_static::lazy_static;
 use paste::paste;
+use spin::LazyLock;
 
 const PAGE_DIRECTORY_LEN: usize = PAGE_FRAME_SIZE / size_of::<PageDirectoryEntry>();
 
@@ -537,75 +537,74 @@ pub unsafe fn enable() {
     }
 }
 
-lazy_static! {
-    static ref PSE_SUPPORTED: bool = {
-        bitfield!(
-            EFlags, u32{} { (id, 21) }
-        );
+static PSE_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
+    bitfield!(
+        EFlags, u32{} { (id, 21) }
+    );
 
-        let eflags_diff: u32;
-        unsafe {
-            asm!("
-                pushfd // Save original EFLAGS.
+    let eflags_diff: u32;
+    unsafe {
+        asm!("
+            pushfd // Save original EFLAGS.
 
-                // Get a copy of EFLAGS and modify it to toggle the mask bit.
-                pushfd
-                pop {0}
-                xor {0}, {mask}
-                push {0}
+            // Get a copy of EFLAGS and modify it to toggle the mask bit.
+            pushfd
+            pop {0}
+            xor {0}, {mask}
+            push {0}
 
-                popfd // Move the copy into EFLAGS.
+            popfd // Move the copy into EFLAGS.
 
-                // Get a diff of what changed in EFLAGS after the attempted
-                // modification.
-                pushfd
-                pop {0}
-                xor {0}, [esp]
+            // Get a diff of what changed in EFLAGS after the attempted
+            // modification.
+            pushfd
+            pop {0}
+            xor {0}, [esp]
 
-                popfd // Restore original EFLAGS.
-                ",
-                out(reg) eflags_diff,
-                mask = const EFlags::default().with_id(true).load() as u8,
-            )
-        };
-
-        // If the attempted modification didn't change the id bit, then cpuid
-        // isn't supported.
-        if !EFlags::new(eflags_diff).id() {
-            return false;
-        }
-
-        bitfield!(
-            CPUIDEdx, u32 {} { (pse, 3) }
-        );
-
-        let core::arch::x86::CpuidResult { edx, .. } = core::arch::x86::__cpuid(0);
-        CPUIDEdx::new(edx).pse()
+            popfd // Restore original EFLAGS.
+            ",
+            out(reg) eflags_diff,
+            mask = const EFlags::default().with_id(true).load() as u8,
+        )
     };
-    static ref PSE_ENABLED: bool = {
-        // Check if PSE is already enabled (from the trampoline, if we're running  in the kernel).
-        bitfield!(
-            CR4, u32 {} { (pse, 4) }
-        );
 
-        let cr4: u32;
-        unsafe { asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack)) };
-        let cr4 = CR4::new(cr4);
-        if cr4.pse() {
-            // If it is, early return true.
-            return true;
-        }
+    // If the attempted modification didn't change the id bit, then cpuid
+    // isn't supported.
+    if !EFlags::new(eflags_diff).id() {
+        return false;
+    }
 
-        if !*PSE_SUPPORTED {
-            // If not, and it's not supported, early return false.
-            return false;
-        }
+    bitfield!(
+        CPUIDEdx, u32 {} { (pse, 3) }
+    );
 
-        // Otherwise, enable it and return true.
-        unsafe { asm!("mov cr4, {}", in(reg) cr4.with_pse(true).load() as usize, options(nostack)) };
-        true
-    };
-}
+    let core::arch::x86::CpuidResult { edx, .. } = core::arch::x86::__cpuid(0);
+    CPUIDEdx::new(edx).pse()
+});
+
+static PSE_ENABLED: LazyLock<bool> = LazyLock::new(|| {
+    // Check if PSE is already enabled (from the trampoline, if we're running  in the kernel).
+    bitfield!(
+        CR4, u32 {} { (pse, 4) }
+    );
+
+    let cr4: u32;
+    unsafe { asm!("mov {}, cr4", out(reg) cr4, options(nomem, nostack)) };
+    let cr4 = CR4::new(cr4);
+    if cr4.pse() {
+        // If it is, early return true.
+        return true;
+    }
+
+    if !*PSE_SUPPORTED {
+        // If not, and it's not supported, early return false.
+        return false;
+    }
+
+    // Otherwise, enable it and return true.
+    unsafe { asm!("mov cr4, {}", in(reg) cr4.with_pse(true).load() as usize, options(nostack)) };
+    true
+});
 
 pub struct MappingRange {
     pub phys_start: usize,

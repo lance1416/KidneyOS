@@ -1,8 +1,7 @@
 use crate::sync::rwlock::sleep::RwLock;
 use alloc::string::{String, ToString};
-use lazy_static::lazy_static;
+use spin::LazyLock;
 
-lazy_static! {
-    pub static ref CURR_DIR: RwLock<String> = RwLock::new("/".to_string());
-    pub static ref HOST_NAME: RwLock<String> = RwLock::new("kidney".to_string());
-}
+pub static CURR_DIR: LazyLock<RwLock<String>> = LazyLock::new(|| RwLock::new("/".to_string()));
+pub static HOST_NAME: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("kidney".to_string()));
