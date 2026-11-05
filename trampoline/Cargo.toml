@@ -8,5 +8,4 @@ crate-type = ["staticlib"]
 test = false
 
 [dependencies]
-arbitrary-int = "1.2.7"
 kidneyos-shared.path = "../shared"
