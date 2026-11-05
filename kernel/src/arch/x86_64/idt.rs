@@ -20,6 +20,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 use kidneyos_shared::{eprintln, println};
+use spin::Mutex;
 
 pub const DIVIDE_ERROR: u8 = 0;
 pub const NMI: u8 = 2;
@@ -232,6 +233,19 @@ pub fn ticks() -> u64 {
     TICKS.load(Ordering::Relaxed)
 }
 
+/// Handles a page fault the kernel expects, returning whether it did. If it
+/// returns false, the page fault is fatal.
+type PageFaultFixup = fn(cr2: u64, frame: &TrapFrame) -> bool;
+
+static PAGE_FAULT_FIXUP: Mutex<Option<PageFaultFixup>> = Mutex::new(None);
+
+/// Sets the handler for page faults that aren't fatal (there is no demand
+/// paging yet). Must be called with interrupts enabled or outside of a page
+/// fault, or it deadlocks.
+pub fn set_page_fault_fixup(fixup: PageFaultFixup) {
+    *PAGE_FAULT_FIXUP.lock() = Some(fixup);
+}
+
 /// Called by `interrupt_common` for every interrupt, with interrupts disabled.
 extern "C" fn interrupt_dispatch(frame: &mut TrapFrame) {
     let Ok(vector) = u8::try_from(frame.vector) else {
@@ -302,7 +316,10 @@ fn page_fault(frame: &TrapFrame) {
         frame.rip,
     );
 
-    fatal(frame, "unhandled page fault");
+    let fixup = *PAGE_FAULT_FIXUP.lock();
+    if !fixup.is_some_and(|fixup| fixup(cr2, frame)) {
+        fatal(frame, "unhandled page fault");
+    }
 }
 
 fn fatal(frame: &TrapFrame, what: &str) -> ! {

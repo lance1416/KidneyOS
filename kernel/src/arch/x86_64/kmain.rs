@@ -1,7 +1,8 @@
 //! The Rust entry point of the x86_64 kernel.
 
 use super::{
-    disable_interrupts, enable_interrupts, gdt, halt_forever, idt,
+    disable_interrupts, enable_interrupts, gdt, halt_forever,
+    idt::{self, TrapFrame},
     paging::{self, phys_to_virt},
 };
 use crate::interrupts::pic;
@@ -19,6 +20,15 @@ use kidneyos_shared::{
 const TIMER_HZ: u32 = 100;
 /// How many ticks apart kmain reports the tick count.
 const TICKS_PER_REPORT: u64 = 100;
+
+/// Set at build time with `make ARCH=x86_64 KIDNEYOS_TEST=...` to run one of
+/// the tests below while booting.
+const TEST: Option<&str> = option_env!("KIDNEYOS_TEST");
+
+/// The address `KIDNEYOS_TEST=pagefault` writes to: unmapped, so the write
+/// faults, and the page fault handler maps a page there. It must be canonical
+/// (bit 47 clear in the lower half), or the write raises #GP instead.
+const PAGE_FAULT_TEST_ADDRESS: u64 = 0x0000_0BAD_BEEF_0128;
 
 /// Called by `_start` in boot.s, in long mode, with the multiboot2 magic and
 /// the physical address of the multiboot2 boot information.
@@ -86,6 +96,12 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
     enable_interrupts();
     println!("Interrupts enabled, timer at {TIMER_HZ}Hz");
 
+    match TEST {
+        None | Some("") => {}
+        Some("pagefault") => page_fault_test(),
+        Some(test) => panic!("unknown KIDNEYOS_TEST {test:?}"),
+    }
+
     let mut reported = 0;
     loop {
         // SAFETY: Waits for the next interrupt; interrupts are enabled.
@@ -110,6 +126,29 @@ fn image_region() -> PhysRegion {
         start: &raw const image_start_phys as u64,
         end: &raw const kernel_end_phys as u64,
     }
+}
+
+/// `KIDNEYOS_TEST=pagefault`: writes to an unmapped address. The page fault
+/// handler prints the fault (with cr2), maps a page there and returns, so the
+/// write is retried and succeeds.
+fn page_fault_test() {
+    fn map_test_page(cr2: u64, _frame: &TrapFrame) -> bool {
+        // SAFETY: Nothing uses this address yet.
+        cr2 == PAGE_FAULT_TEST_ADDRESS && unsafe { paging::map_fresh_page(cr2) }
+    }
+
+    println!("KIDNEYOS_TEST=pagefault: writing to {PAGE_FAULT_TEST_ADDRESS:#018X}");
+    idt::set_page_fault_fixup(map_test_page);
+
+    let pointer = PAGE_FAULT_TEST_ADDRESS as *mut u64;
+    // SAFETY: Faults, and the handler maps the page before the write is
+    // retried. Volatile, so that the write and read really happen.
+    let value = unsafe {
+        pointer.write_volatile(0x1234_5678);
+        pointer.read_volatile()
+    };
+    assert_eq!(value, 0x1234_5678);
+    println!("KIDNEYOS_TEST=pagefault: passed, read back {value:#X} after the page fault");
 }
 
 #[panic_handler]

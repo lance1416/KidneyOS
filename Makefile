@@ -26,16 +26,28 @@ OBJCOPY := $(CROSS_PREFIX)objcopy
 # What the smoke test waits for on the serial port (a list of quoted strings):
 # the shell prompt.
 SMOKE_EXPECT := 'kidney:/$$'
+ifneq ($(KIDNEYOS_TEST),)
+$(error KIDNEYOS_TEST is only supported with ARCH=x86_64)
+endif
 else ifeq ($(ARCH),x86_64)
 KERNEL_TARGET := x86_64-unknown-none
 QEMU := qemu-system-x86_64
 # The i686 binutils can't be relied on to handle ELF64, so use the llvm-objcopy
 # of the llvm-tools component.
 OBJCOPY := $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc --print host-tuple)/bin/llvm-objcopy
+# Set to run a test while booting; see kmain.rs. With KIDNEYOS_TEST=pagefault,
+# the kernel writes to an unmapped address, and the page fault handler maps it.
+KIDNEYOS_TEST ?=
 # How many timer ticks (100 per second) the smoke test waits for; the kernel
 # reports every 100th.
 SMOKE_TICKS ?= 300
+ifeq ($(KIDNEYOS_TEST),)
 SMOKE_EXPECT := 'KidneyOS x86_64: hello' 'tick $(SMOKE_TICKS)'
+else ifeq ($(KIDNEYOS_TEST),pagefault)
+SMOKE_EXPECT := 'page fault: cr2=0x00000BADBEEF0128' 'KIDNEYOS_TEST=pagefault: passed'
+else
+$(error Unknown KIDNEYOS_TEST: $(KIDNEYOS_TEST) (expected pagefault))
+endif
 else
 $(error Unhandled ARCH: $(ARCH) (expected i686 or x86_64))
 endif
@@ -75,7 +87,7 @@ help: ## Show this help
 	    $(MAKEFILE_LIST)
 	@echo
 	@echo 'Variables: ARCH=i686|x86_64, PROFILE=dev|release, QEMU_DEBUG=<qemu -d items>,'
-	@echo '           BOCHS_DISPLAY=<bochs display_library>'
+	@echo '           BOCHS_DISPLAY=<bochs display_library>, KIDNEYOS_TEST=pagefault (x86_64)'
 
 .PHONY: iso
 iso: $(ISO) ## Build the bootable ISO (build/ARCH/kidneyos.iso); the default target
@@ -115,9 +127,17 @@ else ifeq ($(ARCH),x86_64)
 # uses the kernel code model, and core and alloc come prebuilt for it; the
 # rustflags in .cargo/config.toml link it at a fixed address rather than as a
 # static PIE. The boot stub is part of the kernel, so there is no trampoline.
-$(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld \
+# Records KIDNEYOS_TEST, so that the kernel is rebuilt when it changes.
+KIDNEYOS_TEST_STAMP := $(BUILD_DIR)/kidneyos-test
+
+.PHONY: FORCE
+$(KIDNEYOS_TEST_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(KIDNEYOS_TEST)' | cmp -s - $@ || echo '$(KIDNEYOS_TEST)' > $@
+
+$(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld $(KIDNEYOS_TEST_STAMP) \
 		$(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
-	cargo rustc \
+	KIDNEYOS_TEST='$(KIDNEYOS_TEST)' cargo rustc \
 	  --bin kidneyos \
 	  --manifest-path $< \
 	  --profile $(PROFILE) \
@@ -126,6 +146,7 @@ $(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld \
 	  -C link-arg=-T -C link-arg=build-support/x86_64.ld \
 	  -C link-arg=-z -C link-arg=max-page-size=0x1000 \
 	  -C link-arg=-n
+	@touch $@
 
 endif
 

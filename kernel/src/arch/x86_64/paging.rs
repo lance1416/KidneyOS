@@ -42,8 +42,6 @@ static FRAME_LIMIT: AtomicU64 = AtomicU64::new(BOOT_DIRECT_MAP_END);
 /// The kernel's page tables, once loaded.
 static KERNEL_PAGES: Mutex<Option<KernelPages>> = Mutex::new(None);
 
-// Only kept so that the page tables stay alive for now.
-#[allow(dead_code)]
 struct KernelPages(PageManager<FrameAllocator>);
 
 // SAFETY: The page tables are only accessed through the mutex.
@@ -224,4 +222,41 @@ pub unsafe fn init_kernel_page_tables(memory: &PhysicalMemory) {
     );
 
     *KERNEL_PAGES.lock() = Some(KernelPages(pages));
+}
+
+/// Maps a fresh, zeroed frame at the page containing `virt` in the kernel's
+/// page tables, writable and not executable. Returns false if it's already
+/// mapped or there is no free memory.
+///
+/// # Safety
+///
+/// Mapping memory at `virt` must not change what any existing pointer refers
+/// to.
+pub unsafe fn map_fresh_page(virt: u64) -> bool {
+    let page = virt - virt % PAGE_SIZE;
+    let mut kernel_pages = KERNEL_PAGES.lock();
+    let Some(KernelPages(pages)) = kernel_pages.as_mut() else {
+        return false;
+    };
+    if pages.is_mapped(page) {
+        return false;
+    }
+    let Some(frame) = FRAMES.lock().allocate() else {
+        return false;
+    };
+    // SAFETY: The frame was free, and the page wasn't mapped.
+    unsafe {
+        (phys_to_virt(frame) as *mut u8).write_bytes(0, PAGE_FRAME_SIZE);
+        pages.map_flags(
+            frame,
+            page,
+            PageFlags {
+                write: true,
+                user: false,
+                exec: false,
+            },
+        );
+        core::arch::asm!("invlpg [{}]", in(reg) page, options(nostack, preserves_flags));
+    }
+    true
 }

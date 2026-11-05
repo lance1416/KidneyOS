@@ -1,7 +1,7 @@
 # Every job only orchestrates: the work itself is done by make targets, so
 # `make check` (plus `make smoke-test`, `make docs` and
-# `make ARCH=x86_64 clippy iso smoke-test`) locally runs the same checks as
-# this workflow.
+# `make ARCH=x86_64 clippy iso smoke-test`, with and without
+# KIDNEYOS_TEST=pagefault) locally runs the same checks as this workflow.
 # Setup shared by the jobs is in .github/actions/setup.
 name: CI
 
@@ -120,6 +120,9 @@ jobs:
           path: build/x86_64/kidneyos.iso
           if-no-files-found: error
           retention-days: 7
+      # Rebuilds the kernel (and the ISO), so it runs after the upload.
+      - name: Check that page faults are handled
+        run: make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test
 
   docs:
     name: Build the docs

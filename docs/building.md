@@ -41,4 +41,4 @@ KidneyOS is being ported from i686 to x86_64. i686 is still the default; to buil
 make ARCH=x86_64 run-qemu-ng
 ```
 
-Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`). So far the x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, prints the available memory, and then only counts timer interrupts, printing `tick 100`, `tick 200` and so on (on the screen and the serial port). `make ARCH=x86_64 smoke-test` checks that it gets that far.
+Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`). So far the x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, prints the available memory, and then only counts timer interrupts, printing `tick 100`, `tick 200` and so on (on the screen and the serial port). `make ARCH=x86_64 smoke-test` checks that it gets that far. `make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
