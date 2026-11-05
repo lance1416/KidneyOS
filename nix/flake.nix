@@ -51,6 +51,42 @@
       # repository with the official nixfmt style.
       formatter = forAllSystems ({ pkgs, ... }: pkgs.nixfmt-tree);
 
+      # Run with `nix flake check ./nix`.
+      checks = forAllSystems (
+        { system, pkgs }:
+        let
+          # The repository root (only files tracked by Git).
+          src = ../.;
+          lint =
+            name: nativeBuildInputs: script:
+            pkgs.runCommand name { inherit nativeBuildInputs; } ''
+              cp -r --no-preserve=mode ${src} src
+              cd src
+              ${script}
+              touch $out
+            '';
+        in
+        {
+          # Make sure the devShells (and so the builder image's contents)
+          # build, not just evaluate.
+          devShell-build = self.devShells.${system}.build;
+          devShell-default = self.devShells.${system}.default;
+
+          # Equivalent to `nix fmt ./nix -- --ci`.
+          nix-fmt = lint "nix-fmt" [ self.formatter.${system} ] ''
+            treefmt --ci --tree-root .
+          '';
+
+          shellcheck = lint "shellcheck" [ pkgs.shellcheck ] ''
+            shellcheck scripts/*.bash
+          '';
+
+          actionlint = lint "actionlint" [ pkgs.actionlint pkgs.shellcheck ] ''
+            actionlint .github/workflows/*.yaml
+          '';
+        }
+      );
+
       packages = forAllSystems (
         { system, pkgs }: {
           # A Docker image containing the `build` devShell. It is published by
@@ -68,10 +104,12 @@
         { system, pkgs }:
         let
           inherit (pkgs)
+            actionlint
             bochs
             gdb
             gnumake
             grcov
+            gzip
             mdbook
             mdsh
             mkShell
@@ -81,6 +119,7 @@
             shellcheck
             xorriso
             xxd
+            xz
             ;
           rust = rust-bin.fromRustupToolchainFile ../rust-toolchain.toml;
           # Cross toolchain providing the i686-unknown-linux-gnu-* binutils and
@@ -109,15 +148,20 @@
           # docs/building/docker.md#maintainers for details.
           build = mkShell {
             packages = [
+              actionlint
               gnumake
               grcov
               grub2
+              gzip
               i686-cc
               mdbook
+              mdsh
               mtools
               qemu
               rust
+              shellcheck
               xorriso
+              xz
             ];
 
             CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER = "${i686-cc.targetPrefix}cc";
@@ -132,8 +176,6 @@
             nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [
               bochs
               gdb
-              mdsh
-              shellcheck
               xxd
             ];
           });
