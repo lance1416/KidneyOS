@@ -111,7 +111,7 @@ jobs:
         run: make ARCH=x86_64 clippy
       - name: Build the x86_64 ISO
         run: make ARCH=x86_64 iso
-      - name: Boot it and wait for timer ticks
+      - name: Boot it and wait for the disk, the threads and the shell
         run: make ARCH=x86_64 smoke-test
       - name: Upload the ISO
         uses: actions/upload-artifact@v7

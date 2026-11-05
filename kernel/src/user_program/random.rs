@@ -7,7 +7,7 @@ fn generate_random_i32() -> Option<i32> {
 
     unsafe {
         asm!(
-            "rdrand {0}",
+            "rdrand {0:e}",
             "setc {1}",
             out(reg) random_int,
             out(reg_byte) success,

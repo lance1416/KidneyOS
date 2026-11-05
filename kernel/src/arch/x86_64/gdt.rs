@@ -7,6 +7,9 @@
 //! privilege level and 64-bit mode, and the TSS only holds stack pointers, for
 //! interrupts from user mode (`rsp0`) and for the interrupt stack table (IST).
 
+// The host tests only use `set_kernel_stack`.
+#![cfg_attr(not(target_os = "none"), allow(dead_code, unused_imports))]
+
 use core::{arch::asm, mem::size_of, ptr::NonNull};
 
 pub const KERNEL_CODE_SELECTOR: u16 = 0x08;
@@ -106,6 +109,7 @@ fn stack_top(stack: *mut Stack) -> u64 {
 /// # Safety
 ///
 /// Must only be called once, on the boot CPU, with interrupts disabled.
+#[cfg(target_os = "none")]
 pub unsafe fn init() {
     unsafe extern "C" {
         /// The stack kmain runs on (see boot.s).
@@ -161,7 +165,6 @@ pub unsafe fn init() {
 ///
 /// `top` must be the 16-byte aligned top of a kernel stack that stays valid
 /// for as long as it is set, and that nothing else uses while in user mode.
-#[allow(dead_code)]
 pub unsafe fn set_kernel_stack(top: NonNull<u8>) {
     let tss = &raw mut TSS;
     unsafe { (*tss).rsp[0] = top.as_ptr() as u64 };

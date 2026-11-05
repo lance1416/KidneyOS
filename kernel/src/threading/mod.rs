@@ -17,6 +17,7 @@ use crate::{
     threading::scheduling::create_scheduler,
 };
 use alloc::boxed::Box;
+use kidneyos_shared::println;
 use thread_control_block::ThreadControlBlock;
 
 pub struct ThreadState {
@@ -39,7 +40,9 @@ pub fn create_thread_state() -> ThreadState {
 }
 
 /// Thread system must have been previously enabled.
-pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: &[u8]) -> ! {
+///
+/// `init_elf` is the first user program to run, if any.
+pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: Option<&[u8]>) -> ! {
     assert_eq!(intr_get_level(), IntrLevel::IntrOff);
     let system = unwrap_system();
     // We must 'turn the kernel thread into a thread'.
@@ -54,18 +57,21 @@ pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: &[u8]) ->
         &system.process,
     );
 
-    // Create the initial user program thread.
-    let elf = Elf::parse_bytes(init_elf).expect("failed to parse provided elf file");
-
-    // Create the initial user program thread.
-    let user_tcb = ThreadControlBlock::new_from_elf(elf, &system.process)
-        .expect("Failed to parse Elf for initial program.");
-
     // SAFETY: Interrupts must be disabled.
     *system.threads.running_thread.lock() = Some(Box::new(kernel_tcb));
-    let mut scheduler = system.threads.scheduler.lock();
-    scheduler.push(Box::new(user_tcb));
-    drop(scheduler);
+
+    if let Some(init_elf) = init_elf {
+        // Create the initial user program thread.
+        let elf = Elf::parse_bytes(init_elf).expect("failed to parse provided elf file");
+
+        // Create the initial user program thread.
+        let user_tcb = ThreadControlBlock::new_from_elf(elf, &system.process)
+            .expect("Failed to parse Elf for initial program.");
+
+        system.threads.scheduler.lock().push(Box::new(user_tcb));
+    } else {
+        println!("No init program to run");
+    }
 
     intr_enable();
 

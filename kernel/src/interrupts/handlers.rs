@@ -1,5 +1,8 @@
 //! Architecture-independent handling of CPU exceptions. The architecture's
 //! interrupt entry stubs call into these.
+// TODO(x86_64): The x86_64 interrupt dispatcher only uses these once user
+// programs (and their page faults) exist (M4).
+#![cfg_attr(target_arch = "x86_64", allow(dead_code))]
 
 use crate::interrupts::intr_enable;
 use crate::system::running_process;

@@ -5,15 +5,15 @@ edition.workspace = true
 
 [dependencies]
 kidneyos-shared.workspace = true
+nom.workspace = true
 spin = { workspace = true, features = ["spin_mutex"] }
+zerocopy.workspace = true
 
-# Only the i686 kernel uses these so far (the x86_64 one doesn't have a file
-# system or user programs yet). The syscall stubs also use the i686 int 0x80
-# register ABI, which doesn't build for x86_64.
+# The syscall stubs use the i686 int 0x80 register ABI, which doesn't build for
+# x86_64; the x86_64 kernel only uses their definitions (see
+# src/user_program/syscall.rs).
 [target.'cfg(target_arch = "x86")'.dependencies]
 kidneyos-syscalls.workspace = true
-nom.workspace = true
-zerocopy.workspace = true
 
 [features]
 default = ["ticket_mutex"]

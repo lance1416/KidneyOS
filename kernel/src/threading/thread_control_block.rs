@@ -24,7 +24,11 @@ use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, USER_TOP};
 // The stack size choice is based on that of x86-64 Linux and 32-bit Windows
 // Linux: https://docs.kernel.org/next/x86/kernel-stacks.html
 // Windows: https://techcommunity.microsoft.com/t5/windows-blog-archive/pushing-the-limits-of-windows-processes-and-threads/ba-p/723824
+#[cfg(target_arch = "x86")]
 pub const KERNEL_THREAD_STACK_FRAMES: usize = 2;
+// Pointers and saved registers are twice as large.
+#[cfg(target_arch = "x86_64")]
+pub const KERNEL_THREAD_STACK_FRAMES: usize = 4;
 const KERNEL_THREAD_STACK_SIZE: usize = KERNEL_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
 pub const USER_THREAD_STACK_FRAMES: usize = 4 * 1024;
 pub const USER_THREAD_STACK_SIZE: usize = USER_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
@@ -139,6 +143,12 @@ impl ThreadControlBlock {
             return Err(ThreadElfCreateError::NotExecutable);
         }
 
+        // TODO(x86_64): Load ELF64 programs (M4). Nothing runs user programs on
+        // x86_64 yet.
+        if cfg!(target_arch = "x86_64") {
+            unimplemented!("user programs on x86_64");
+        }
+
         if elf.header.architecture != ElfArchitecture::X86 {
             return Err(ThreadElfCreateError::UnsupportedArchitecture);
         }
@@ -243,16 +253,7 @@ impl ThreadControlBlock {
         let mut new_thread = Self::new(entry_instruction, false, pid, page_manager, state);
 
         // Now, we must build the stack frames for our new thread.
-        let switch_threads_context = new_thread
-            .allocate_stack_space(size_of::<SwitchThreadsContext>())
-            .expect("No Stack Space!");
-
-        // SAFETY: Manually setting stack bytes a la C.
-        unsafe {
-            *switch_threads_context
-                .as_ptr()
-                .cast::<SwitchThreadsContext>() = SwitchThreadsContext::new();
-        }
+        new_thread.push_to_stack(SwitchThreadsContext::new());
 
         // Our thread can now be run via the `switch_threads` method.
         new_thread.status = ThreadStatus::Ready;
@@ -283,22 +284,8 @@ impl ThreadControlBlock {
         // In order (of creation), we have:
         //  * prepare_thread frame
         //  * switch_threads
-        let prepare_thread_context = new_thread
-            .allocate_stack_space(size_of::<PrepareThreadContext>())
-            .expect("No Stack Space!");
-        let switch_threads_context = new_thread
-            .allocate_stack_space(size_of::<SwitchThreadsContext>())
-            .expect("No Stack Space!");
-
-        // SAFETY: Manually setting stack bytes a la C.
-        unsafe {
-            *prepare_thread_context
-                .as_ptr()
-                .cast::<PrepareThreadContext>() = PrepareThreadContext::new(ip.as_ptr());
-            *switch_threads_context
-                .as_ptr()
-                .cast::<SwitchThreadsContext>() = SwitchThreadsContext::new();
-        }
+        new_thread.push_to_stack(PrepareThreadContext::new(ip.as_ptr()));
+        new_thread.push_to_stack(SwitchThreadsContext::new());
 
         new_thread.ip = ip; // !!!
 
@@ -372,6 +359,21 @@ impl ThreadControlBlock {
             exit_code: None,
             page_manager,
         }
+    }
+
+    /// Pushes `value` onto this (not yet running) thread's kernel stack.
+    fn push_to_stack<T>(&mut self, value: T) {
+        let slot = self
+            .allocate_stack_space(size_of::<T>())
+            .expect("No Stack Space!")
+            .as_ptr()
+            .cast::<T>();
+        // The stack is page aligned, and everything pushed has a size that is
+        // a multiple of its alignment (which i686's packed contexts don't
+        // have).
+        assert!(slot.is_aligned(), "misaligned kernel stack pointer");
+        // SAFETY: The slot was just allocated on this thread's stack.
+        unsafe { slot.write(value) };
     }
 
     /// If possible without stack-smashing, moves the stack pointer down and returns the new value.

@@ -1,60 +1,50 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
-#![cfg_attr(target_arch = "x86", feature(negative_impls))]
+#![feature(negative_impls)]
 // Only used by the buddy allocator tests.
 #![cfg_attr(test, feature(btreemap_alloc, slice_ptr_get))]
 
-// While KidneyOS is being ported to x86_64, only `arch` and `interrupts` are
-// built for it: the `x86_64` module has its own entry point (`kmain`), and
-// everything else is still i686 only.
 mod arch;
-#[cfg(target_arch = "x86")]
 mod block;
-#[cfg(target_arch = "x86")]
 mod drivers;
-#[cfg(target_arch = "x86")]
 pub mod fs;
 mod interrupts;
-#[cfg(target_arch = "x86")]
 pub mod mem;
-#[cfg(target_arch = "x86")]
 mod paging;
-#[cfg(target_arch = "x86")]
 mod rush;
-#[cfg(target_arch = "x86")]
 pub mod sync;
-#[cfg(target_arch = "x86")]
 mod system;
-#[cfg(target_arch = "x86")]
 mod threading;
-#[cfg(target_arch = "x86")]
+// TODO(x86_64): Only reachable through system calls, which x86_64 doesn't
+// have yet (M4).
+#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 mod user_program;
-#[cfg(target_arch = "x86")]
 pub mod vfs;
 
-#[cfg(target_arch = "x86")]
 extern crate alloc;
 
+use crate::block::block_core::BlockManager;
+use crate::drivers::ata::ata_core::ide_init;
+use crate::drivers::input::input_core::InputBuffer;
+use crate::fs::fs_manager::RootFileSystem;
+use crate::sync::mutex::Mutex;
+use crate::sync::rwlock::sleep::RwLock;
+use crate::system::SystemState;
+use crate::threading::process::create_process_state;
+use crate::threading::thread_control_block::ThreadControlBlock;
+use crate::threading::thread_functions::ThreadFunction;
+use alloc::boxed::Box;
+use kidneyos_shared::println;
+use mem::KernelAllocator;
+use paging::PageManager;
+use threading::{create_thread_state, thread_system_start};
+use vfs::tempfs::TempFS;
 #[cfg(target_arch = "x86")]
 use {
-    crate::block::block_core::BlockManager,
-    crate::drivers::ata::ata_core::ide_init,
-    crate::drivers::input::input_core::InputBuffer,
-    crate::fs::fs_manager::RootFileSystem,
-    crate::sync::mutex::Mutex,
-    crate::sync::rwlock::sleep::RwLock,
-    crate::system::SystemState,
-    crate::threading::process::create_process_state,
-    crate::threading::thread_control_block::ThreadControlBlock,
-    alloc::boxed::Box,
     interrupts::pic,
-    kidneyos_shared::{global_descriptor_table, println, video_memory::video_memory_writer},
-    mem::KernelAllocator,
-    threading::{create_thread_state, thread_system_start},
-    vfs::tempfs::TempFS,
+    kidneyos_shared::{global_descriptor_table, video_memory::video_memory_writer},
 };
 
-#[cfg(target_arch = "x86")]
 #[cfg_attr(not(test), global_allocator)]
 static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 
@@ -65,7 +55,6 @@ static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 /// The caller must ensure that nothing else (including the global allocator
 /// interface, e.g. from an interrupt handler) uses the allocator while the
 /// returned reference is in use.
-#[cfg(target_arch = "x86")]
 pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
     let ptr = &raw mut KERNEL_ALLOCATOR;
     // SAFETY: Exclusive access is guaranteed by the caller.
@@ -91,7 +80,7 @@ extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lin
     }
 
     // SAFETY: Single core, interrupts disabled.
-    unsafe {
+    let page_manager = unsafe {
         kernel_allocator().init(memory_start..memory_end);
 
         println!("Setting up IDTR");
@@ -111,34 +100,54 @@ extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lin
         pic::init_pit();
         println!("PIT set up!");
 
-        println!("Initializing Thread System...");
-        let threads = create_thread_state();
-        let mut process = create_process_state();
-        println!("Finished Thread System initialization. Ready to start threading.");
+        page_manager
+    };
 
-        println!("Mounting root filesystem...");
-        let mut root = RootFileSystem::new();
-        // for now, we just use TempFS for the root filesystem
-        root.mount_root(TempFS::new())
-            .expect("Couldn't mount root FS");
+    start_kernel(page_manager, Some(INIT), &[])
+}
 
-        let ide_tcb =
-            ThreadControlBlock::new_with_setup(ide_init, true, 0, &mut root, &mut process);
+/// The architecture-independent part of booting, after the architecture's
+/// entry point has set up memory (including the kernel allocator), the
+/// descriptor tables and the PIT. Starts the threads, the first of which runs
+/// `init` (if any), and continues as the kernel shell (rush).
+///
+/// `page_manager` is the address space of the thread this becomes, and
+/// `kernel_threads` are kernel threads to start besides the IDE driver's.
+pub fn start_kernel(
+    page_manager: PageManager,
+    init: Option<&[u8]>,
+    kernel_threads: &[ThreadFunction],
+) -> ! {
+    println!("Initializing Thread System...");
+    let threads = create_thread_state();
+    let mut process = create_process_state();
+    println!("Finished Thread System initialization. Ready to start threading.");
 
-        let block_manager = BlockManager::default();
-        let input_buffer = Mutex::new(InputBuffer::new());
+    println!("Mounting root filesystem...");
+    let mut root = RootFileSystem::new();
+    // for now, we just use TempFS for the root filesystem
+    root.mount_root(TempFS::new())
+        .expect("Couldn't mount root FS");
+    println!("Root filesystem mounted");
 
-        threads.scheduler.lock().push(Box::new(ide_tcb));
-
-        crate::system::init_system(SystemState {
-            threads,
-            process,
-            block_manager: RwLock::new(block_manager),
-            root_filesystem: Mutex::new(root),
-            input_buffer,
-        });
-        println!("initialized system");
-
-        thread_system_start(page_manager, INIT);
+    let ide_tcb = ThreadControlBlock::new_with_setup(ide_init, true, 0, &mut root, &mut process);
+    threads.scheduler.lock().push(Box::new(ide_tcb));
+    for &function in kernel_threads {
+        let tcb = ThreadControlBlock::new_with_setup(function, true, 0, &mut root, &mut process);
+        threads.scheduler.lock().push(Box::new(tcb));
     }
+
+    let block_manager = BlockManager::default();
+    let input_buffer = Mutex::new(InputBuffer::new());
+
+    crate::system::init_system(SystemState {
+        threads,
+        process,
+        block_manager: RwLock::new(block_manager),
+        root_filesystem: Mutex::new(root),
+        input_buffer,
+    });
+    println!("initialized system");
+
+    thread_system_start(page_manager, init);
 }

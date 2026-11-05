@@ -5,6 +5,8 @@ use super::{
     thread_sleep::thread_wakeup,
 };
 
+// Only used by system calls (which x86_64 doesn't have yet).
+#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 pub fn exit_process(exit_code: i32) -> ! {
     let pcb = running_process();
     let mut pcb = pcb.lock();

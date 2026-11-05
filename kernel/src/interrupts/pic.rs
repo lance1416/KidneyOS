@@ -42,29 +42,17 @@ pub unsafe fn pic_remap(offset1: u8, offset2: u8) {
     }
 }
 
-/// The frequency of the PIT's input clock, in Hz. The PIT interrupts at this
-/// frequency divided by the reload value.
-// Only used by the x86_64 kernel so far.
-#[cfg_attr(target_arch = "x86", allow(dead_code))]
-pub const PIT_INPUT_HZ: u32 = 1_193_182;
-
-/// Programs the PIT to interrupt at its slowest rate (about 18.2Hz) and
-/// unmasks all IRQs.
+/// Programs the PIT to interrupt at its slowest rate, about 18.2Hz (see
+/// `timer::TIMER_INTERRUPT_INTERVAL`), and unmasks all IRQs.
 pub unsafe fn init_pit() {
-    unsafe { init_pit_with_reload(0xffff) }
-}
-
-/// Programs the PIT to interrupt every `reload` input clock cycles (see
-/// [`PIT_INPUT_HZ`]) and unmasks all IRQs.
-pub unsafe fn init_pit_with_reload(reload: u16) {
     unsafe {
         // program the PIT
         // channel 0 (bit 6-7), lo/hi-byte (bit 4-5), rate generator (bit 1-3)
         outb(0x43, 0b00110100);
 
-        let [low, high] = reload.to_le_bytes();
-        outb(0x40, low);
-        outb(0x40, high);
+        // Reload value 0xffff, low byte first.
+        outb(0x40, 0xff);
+        outb(0x40, 0xff);
 
         // unmask and activate all IRQs
         outb(PIC1_DATA, 0x0);

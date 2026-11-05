@@ -38,11 +38,13 @@ OBJCOPY := $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc --print host
 # Set to run a test while booting; see kmain.rs. With KIDNEYOS_TEST=pagefault,
 # the kernel writes to an unmapped address, and the page fault handler maps it.
 KIDNEYOS_TEST ?=
-# How many timer ticks (100 per second) the smoke test waits for; the kernel
-# reports every 100th.
-SMOKE_TICKS ?= 300
+# The smoke test waits for the IDE driver to have read the disk, the root file
+# system, both preemption test threads (one of which only gets to run if the
+# timer preempts the other) and the shell prompt.
+X86_64_SMOKE_EXPECT := 'IDE subsystem initialized' 'Root filesystem mounted' \
+	'was preempted while spinning' 'started after thread' 'kidney:/$$'
 ifeq ($(KIDNEYOS_TEST),)
-SMOKE_EXPECT := 'KidneyOS x86_64: hello' 'tick $(SMOKE_TICKS)'
+SMOKE_EXPECT := $(X86_64_SMOKE_EXPECT)
 else ifeq ($(KIDNEYOS_TEST),pagefault)
 SMOKE_EXPECT := 'page fault: cr2=0x00000BADBEEF0128' 'KIDNEYOS_TEST=pagefault: passed'
 else
@@ -274,8 +276,6 @@ COVERAGE_DIR := $(PROJECT_DIR)/build/coverage
 COVERAGE_STAMP := $(COVERAGE_DIR)/.tests-passed
 TEST_BINARY_DIR := $(CARGO_TARGET_DIR)/i686-unknown-linux-gnu/debug
 
-# The rustflags are passed with --config rather than RUSTFLAGS so that they are
-# added to the ones in .cargo/config.toml instead of replacing them.
 .PHONY: test
 test: $(PROGRAMS) ## Run the tests (with coverage instrumentation)
 	rm -rf $(COVERAGE_DIR)

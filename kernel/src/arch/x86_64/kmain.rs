@@ -1,12 +1,21 @@
 //! The Rust entry point of the x86_64 kernel.
 
 use super::{
-    disable_interrupts, enable_interrupts, gdt, halt_forever,
+    disable_interrupts, gdt, halt_forever,
     idt::{self, TrapFrame},
     paging::{self, phys_to_virt},
 };
-use crate::interrupts::pic;
-use core::{arch::asm, panic::PanicInfo};
+use crate::{
+    interrupts::{intr_disable, intr_enable, pic},
+    kernel_allocator,
+    paging::{PageManager, PageManagerDefault},
+    start_kernel,
+};
+use core::{
+    hint::spin_loop,
+    panic::PanicInfo,
+    sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 use kidneyos_shared::{
     eprintln,
     mem::regions::PhysRegion,
@@ -15,11 +24,6 @@ use kidneyos_shared::{
     serial::serial_writer,
     video_memory::video_memory_writer,
 };
-
-/// Timer interrupts per second.
-const TIMER_HZ: u32 = 100;
-/// How many ticks apart kmain reports the tick count.
-const TICKS_PER_REPORT: u64 = 100;
 
 /// Set at build time with `make ARCH=x86_64 KIDNEYOS_TEST=...` to run one of
 /// the tests below while booting.
@@ -87,31 +91,36 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
     // else in use are in the kernel image.
     unsafe { paging::init_kernel_page_tables(&memory) };
 
-    // SAFETY: Interrupts are still disabled, and the IDT handles every IRQ.
-    unsafe {
-        pic::pic_remap(pic::PIC1_OFFSET, pic::PIC2_OFFSET);
-        #[allow(clippy::cast_possible_truncation)]
-        pic::init_pit_with_reload((pic::PIT_INPUT_HZ / TIMER_HZ) as u16);
-    }
-    enable_interrupts();
-    println!("Interrupts enabled, timer at {TIMER_HZ}Hz");
-
     match TEST {
         None | Some("") => {}
         Some("pagefault") => page_fault_test(),
         Some(test) => panic!("unknown KIDNEYOS_TEST {test:?}"),
     }
 
-    let mut reported = 0;
-    loop {
-        // SAFETY: Waits for the next interrupt; interrupts are enabled.
-        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) };
-        let ticks = idt::ticks();
-        if ticks / TICKS_PER_REPORT > reported {
-            reported = ticks / TICKS_PER_REPORT;
-            println!("tick {}", reported * TICKS_PER_REPORT);
-        }
+    // The kernel heap gets one region; the frame allocator above keeps the
+    // rest.
+    let heap = paging::take_largest_region();
+    let to_usize = |addr| usize::try_from(addr).expect("physical addresses fit in usize");
+    // SAFETY: Single core, interrupts disabled; the region is free memory in
+    // the direct map that nothing else will hand out.
+    unsafe { kernel_allocator().init(to_usize(heap.start)..to_usize(heap.end)) };
+
+    // The address space of the thread kmain becomes: the kernel's half only.
+    let page_manager = PageManager::default();
+    // SAFETY: Same kernel half as the page tables loaded now, and nothing in
+    // use is in the user half.
+    unsafe { page_manager.load() };
+
+    // SAFETY: Interrupts are still disabled (until the threads start), and
+    // the IDT handles every IRQ.
+    unsafe {
+        println!("Setting up PIT");
+        pic::pic_remap(pic::PIC1_OFFSET, pic::PIC2_OFFSET);
+        pic::init_pit();
+        println!("PIT set up!");
     }
+
+    start_kernel(page_manager, None, &[preemption_test, preemption_test])
 }
 
 /// The physical memory the kernel image (including the boot stub) was loaded
@@ -149,6 +158,38 @@ fn page_fault_test() {
     };
     assert_eq!(value, 0x1234_5678);
     println!("KIDNEYOS_TEST=pagefault: passed, read back {value:#X} after the page fault");
+}
+
+static PREEMPTION_TEST_THREADS: AtomicUsize = AtomicUsize::new(0);
+static PREEMPTION_TEST_STARTED: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+
+/// Run by two kernel threads at startup, to show that the timer preempts
+/// threads: each spins without yielding until the other one has started. The
+/// first one to run only gets past that if it is preempted.
+// TODO(x86_64): Remove once user programs show the same (M4).
+extern "C" fn preemption_test() -> i32 {
+    let me = PREEMPTION_TEST_THREADS.fetch_add(1, Ordering::Relaxed) % 2;
+    let other = 1 - me;
+    PREEMPTION_TEST_STARTED[me].store(true, Ordering::Relaxed);
+
+    let start = idt::ticks();
+    while !PREEMPTION_TEST_STARTED[other].load(Ordering::Relaxed) {
+        spin_loop();
+    }
+    let waited = idt::ticks() - start;
+
+    // Don't interleave with what other threads print.
+    intr_disable();
+    if waited > 0 {
+        println!(
+            "Preemption test: thread {me} was preempted while spinning, \
+             and saw thread {other} start {waited} ticks later"
+        );
+    } else {
+        println!("Preemption test: thread {me} started after thread {other}");
+    }
+    intr_enable();
+    0
 }
 
 #[panic_handler]

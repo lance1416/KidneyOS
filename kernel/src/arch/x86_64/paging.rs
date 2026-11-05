@@ -200,6 +200,9 @@ pub unsafe fn init_kernel_page_tables(memory: &PhysicalMemory) {
             pages.map_range_flags(start - kernel_base, start, end - start, flags);
         }
     }
+    // Every thread's address space shares this half (see
+    // `share_kernel_half`), including what is mapped in it later.
+    pages.allocate_kernel_half();
 
     let direct_map_size = memory.direct_map.total_len();
     let direct_map_end = memory.direct_map.as_slice().last().map_or(0, |r| r.end);
@@ -222,6 +225,39 @@ pub unsafe fn init_kernel_page_tables(memory: &PhysicalMemory) {
     );
 
     *KERNEL_PAGES.lock() = Some(KernelPages(pages));
+}
+
+/// Makes the kernel half of `pages` that of the kernel's page tables, so that
+/// it can be loaded instead of them.
+///
+/// # Safety
+///
+/// Must only be called after [`init_kernel_page_tables`]. `pages` must access
+/// its page tables through the direct map.
+pub unsafe fn share_kernel_half<A: Allocator>(pages: &mut PageManager<A>) {
+    let kernel_pages = KERNEL_PAGES.lock();
+    let KernelPages(kernel_pages) = kernel_pages
+        .as_ref()
+        .expect("the kernel's page tables are set up");
+    // SAFETY: The kernel's page tables are never freed.
+    unsafe { pages.share_kernel_half(kernel_pages) };
+}
+
+/// Hands the largest free physical region over to the kernel allocator (and
+/// so to the frame allocator students implement), which only supports one
+/// region; the rest stays with [`FrameAllocator`].
+pub fn take_largest_region() -> PhysRegion {
+    let region = FRAMES
+        .lock()
+        .take_largest()
+        .expect("no free physical memory");
+    println!(
+        "Kernel allocator: {:#X}..{:#X} ({} MiB)",
+        region.start,
+        region.end,
+        region.len() / MB as u64
+    );
+    region
 }
 
 /// Maps a fresh, zeroed frame at the page containing `virt` in the kernel's

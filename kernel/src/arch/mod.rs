@@ -5,8 +5,9 @@
 //! live here. The rest of the kernel only reaches the hardware for these
 //! through the items re-exported from this module.
 //!
-//! The x86_64 port is still being brought up: so far its module only provides
-//! interrupt control, and has its own entry point (`x86_64::kmain`).
+//! The x86_64 port doesn't support user mode yet: its `enter_user_mode` is
+//! unimplemented, and it has its own entry point (`x86_64::kmain`), which
+//! shares the kernel's address space with new threads (`share_kernel_half`).
 
 #[cfg(target_arch = "x86")]
 mod x86;
@@ -18,4 +19,4 @@ pub use x86::*;
 mod x86_64;
 
 #[cfg(target_arch = "x86_64")]
-pub use x86_64::{disable_interrupts, enable_interrupts, interrupts_enabled};
+pub use x86_64::*;

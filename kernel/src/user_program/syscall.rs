@@ -21,7 +21,16 @@ use crate::user_program::time::{CLOCK_MONOTONIC, CLOCK_REALTIME, Timespec, get_r
 use alloc::boxed::Box;
 use core::slice::from_raw_parts_mut;
 use kidneyos_shared::println;
+#[cfg(target_arch = "x86")]
 pub use kidneyos_syscalls::defs::*;
+// The kidneyos-syscalls crate's stubs only build for i686, so the x86_64
+// kernel uses its (architecture-independent) definitions directly.
+// TODO(x86_64): Revisit with the x86_64 system call ABI (M4).
+#[cfg(target_arch = "x86_64")]
+#[path = "../../../syscalls/src/defs.rs"]
+mod defs;
+#[cfg(target_arch = "x86_64")]
+pub use defs::*;
 
 /// This function is responsible for processing syscalls made by user programs.
 /// Its return value is the syscall return value, whose meaning depends on the syscall.

@@ -13,7 +13,11 @@
 //! there is no other register state to save yet.
 
 use super::gdt::{DOUBLE_FAULT_IST, KERNEL_CODE_SELECTOR, NMI_IST};
-use crate::interrupts::pic;
+use crate::{
+    drivers::{ata::ata_interrupt, input::keyboard},
+    interrupts::{pic, timer},
+    threading::scheduling,
+};
 use core::{
     arch::{asm, global_asm},
     mem::size_of,
@@ -269,17 +273,32 @@ extern "C" fn interrupt_dispatch(frame: &mut TrapFrame) {
                 frame.rax
             );
         }
-        _ if (IRQ_BASE..IRQ_BASE + IRQ_COUNT).contains(&vector) => {
-            let irq = vector - IRQ_BASE;
-            if irq == 0 {
-                TICKS.fetch_add(1, Ordering::Relaxed);
-            }
-            // TODO(x86_64): Spurious IRQ 7 and 15 must not be acknowledged
-            // (or only on the master PIC, for 15).
-            // SAFETY: This IRQ is being handled.
-            unsafe { pic::send_eoi(irq) };
-        }
+        _ if (IRQ_BASE..IRQ_BASE + IRQ_COUNT).contains(&vector) => irq(vector - IRQ_BASE),
         _ => eprintln!("unexpected interrupt {vector:#X}, ignored"),
+    }
+}
+
+/// Handles IRQ `irq`, like the i686 interrupt handlers do.
+fn irq(irq: u8) {
+    match irq {
+        0 => {
+            TICKS.fetch_add(1, Ordering::Relaxed);
+            timer::step_sys_clock();
+        }
+        1 => keyboard::atkbd::on_keyboard_interrupt(),
+        14 | 15 => ata_interrupt::on_ide_interrupt(irq),
+        _ => {}
+    }
+    // TODO(x86_64): Spurious IRQ 7 and 15 must not be acknowledged (or only
+    // on the master PIC, for 15).
+    // SAFETY: This IRQ is being handled.
+    unsafe { pic::send_eoi(irq) };
+
+    // The timer preempts the running thread, and a keyboard or disk interrupt
+    // likely makes a waiting thread runnable. Interrupts are only enabled once
+    // the threads have started, so there is always a scheduler.
+    if matches!(irq, 0 | 1 | 14 | 15) {
+        scheduling::scheduler_yield_and_continue();
     }
 }
 

@@ -46,6 +46,8 @@ pub unsafe fn clean_up_thread(mut dying_thread: Box<ThreadControlBlock>) {
 }
 
 // Focibly stops the thread specified by Tid
+// Only used by system calls (which x86_64 doesn't have yet).
+#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 pub fn stop_thread(tid: Tid) {
     let mut scheduler = unwrap_system().threads.scheduler.lock();
     let tcb = scheduler.remove(tid).expect("Why is nothing running !?");

@@ -7,7 +7,15 @@ use crate::rush::pwd::pwd;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use kidneyos_shared::eprintln;
+#[cfg(target_arch = "x86")]
 use kidneyos_syscalls::exit;
+
+/// Exits the shell's process with a system call, as a user program would.
+// TODO(x86_64): System calls (M4).
+#[cfg(target_arch = "x86_64")]
+fn exit(_code: i32) {
+    unimplemented!("system calls on x86_64");
+}
 
 pub(crate) fn parse_input(input: &str) {
     let mut tokens = input.split_whitespace();
