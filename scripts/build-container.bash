@@ -28,8 +28,8 @@ case "$#" in
     ;;
 esac
 
-image=ghcr.io/kidneyos/kidneyos-builder
-project_root=$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")
+# shellcheck source=scripts/container-image.bash
+source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/container-image.bash"
 cd "$project_root"
 
 attr="./nix#packages.$system.kidneyos-builder"

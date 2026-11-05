@@ -21,7 +21,9 @@ cd KidneyOS
 
 If you already have Docker installed, you can skip this step. If you're on Linux, install the [`docker`](https://repology.org/project/docker/versions) package using your package manager (or [`podman`](https://repology.org/project/podman/versions), see below). Otherwise, install Docker Desktop, which can be downloaded [for macOS from here](https://docs.docker.com/desktop/setup/install/mac-install/) or [for Windows from here](https://docs.docker.com/desktop/setup/install/windows-install/).
 
-The image is published for both `amd64` and `arm64`, so on Apple Silicon Macs and ARM Linux machines Docker runs it natively, without emulation.
+The builder image, `ghcr.io/lance1416/kidneyos-builder`, is built for both `amd64` and `arm64`, so on Apple Silicon Macs and ARM Linux machines Docker runs the `arm64` variant natively, without emulation. (The older `ghcr.io/kidneyos/kidneyos-builder` image is `amd64`-only and its toolchain is too old to build the current code, so don't use it.)
+
+> ⚠️ The image is published to the GitHub container registry by CI (see [Maintainers](#maintainers)). If `docker pull ghcr.io/lance1416/kidneyos-builder` fails with `denied` or `manifest unknown`, it hasn't been published yet (or isn't public yet). In that case build it locally first with `scripts/build-container.bash` (add `--arm` on Apple Silicon or other ARM hosts); this only needs Docker and takes a while the first time.
 
 ## Run Container
 
@@ -41,7 +43,9 @@ scripts/run-container.ps1
 
 If you use Podman instead of Docker, pass `--podman` to the script, which makes files created in the container owned by your user.
 
-This will pull the container from the GitHub container registry and start it. You will need to run the container with the script above each time you want to build KidneyOS.
+This will pull the image from the GitHub container registry (unless you've built it locally) and start a shell in it with the repository mounted at `/KidneyOS`, where you can run `make`. You will need to run the container with the script above each time you want to build KidneyOS.
+
+Docker uses the image matching your machine's architecture. To force a specific one, set `KIDNEYOS_PLATFORM`, e.g. `KIDNEYOS_PLATFORM=linux/amd64 scripts/run-container.bash` (or `$env:KIDNEYOS_PLATFORM = "linux/amd64"` in PowerShell).
 
 ## Install Host Tools
 
@@ -52,7 +56,11 @@ Since we can't run graphical tools inside the Docker container, we'll have to in
 
 ## Maintainers
 
-The image is built from the `kidneyos-builder` package in `nix/flake.nix`, which wraps the same `build` devshell that CI uses. After changes to the devshell are merged, rebuild and push the image for each architecture:
+The image is built from the `kidneyos-builder` package in `nix/flake.nix`, which wraps the same `build` devshell that CI uses. Its name is defined once, as `builderImage` in `nix/flake.nix`; the scripts read it from there.
+
+The [`container.yaml`](https://github.com/lance1416/KidneyOS/blob/main/.github/workflows/container.yaml) workflow publishes it: whenever `nix/**` or `rust-toolchain.toml` changes on `main` (or when run by hand from the Actions tab), it builds the image natively on `amd64` and `arm64` runners, pushes the `latest-amd64` and `latest-arm64` tags, and points the multi-architecture `latest` tag at them. After the first publish, make the package public under the package's settings on GitHub so that `docker pull` works without logging in.
+
+To build and push by hand instead:
 
 ```sh
 scripts/build-container.bash        # amd64
@@ -61,4 +69,4 @@ scripts/push-container.bash
 scripts/push-container.bash --arm
 ```
 
-`build-container.bash` uses the host's Nix if it is installed, and otherwise builds inside a `nixos/nix` container, so it also works on macOS with only Docker installed. On an Apple Silicon Mac both architectures can be built this way (the `amd64` image is built under emulation, which is much slower). `push-container.bash` pushes the per-architecture `latest-amd64`/`latest-arm64` tags and then points the multi-architecture `latest` tag at them. You need to be logged in to `ghcr.io` with permission to push to the KidneyOS organization's packages.
+`build-container.bash` uses the host's Nix if it is installed, and otherwise builds inside a `nixos/nix` container, so it also works on macOS with only Docker installed. On an Apple Silicon Mac both architectures can be built this way (the `amd64` image is built under emulation, which is much slower). `push-container.bash` pushes the per-architecture `latest-amd64`/`latest-arm64` tag and then points the multi-architecture `latest` tag at every per-architecture tag that has been pushed. You need to be logged in to `ghcr.io` (`docker login ghcr.io`) with a token that has the `write:packages` scope.

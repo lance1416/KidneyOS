@@ -26,10 +26,12 @@ case "$#" in
     ;;
 esac
 
-image=ghcr.io/kidneyos/kidneyos-builder
+# shellcheck source=scripts/container-image.bash
+source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/container-image.bash"
 
-# You need to be logged in to the GitHub container registry and have sufficient
-# permissions within the KidneyOS organization for this to work.
+# Normally .github/workflows/container.yaml publishes the image. To push by
+# hand you need to be logged in to ghcr.io (`docker login ghcr.io`) with a
+# token that can write to the package.
 docker push "$image:latest-$arch"
 
 # Point the multi-architecture `latest` tag at every per-architecture image that

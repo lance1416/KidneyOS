@@ -1,6 +1,6 @@
 # macOS (Apple Silicon)
 
-> 💡 The easiest way to build KidneyOS on macOS is the [Docker](./docker.md) method: the builder image is available natively for Apple Silicon, so nothing has to be compiled or emulated. Follow these instructions instead if you'd rather have a native toolchain on your Mac.
+> 💡 The easiest way to build KidneyOS on macOS is the [Docker](./docker.md) method. The builder image is built for `arm64` as well as `amd64`, so on Apple Silicon it runs natively, without emulation, once it has been published (until then, `scripts/build-container.bash --arm` builds it locally; see the [Docker](./docker.md) instructions). Follow these instructions instead if you'd rather have a native toolchain on your Mac.
 
 These instructions assume you have [Homebrew](https://brew.sh) installed. You should have already installed the Rust toolchain with rustup as described in the [previous section](./from-source.md#install-rust-toolchain).
 

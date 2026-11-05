@@ -21,6 +21,11 @@
       rust-overlay,
     }:
     let
+      # Name of the published builder image (see docs/building/docker.md). The
+      # scripts in scripts/*-container.* read it from this line, so keep it on a
+      # single line in this form.
+      builderImage = "ghcr.io/lance1416/kidneyos-builder";
+
       # Only Linux hosts are supported: GRUB (needed for grub-mkrescue) is not
       # available on Darwin in nixpkgs. macOS users should use the Docker image
       # or the Homebrew instructions in docs/building/macos.md.
@@ -48,10 +53,11 @@
 
       packages = forAllSystems (
         { system, pkgs }: {
-          # A Docker image containing the `build` devShell. See
+          # A Docker image containing the `build` devShell. It is published by
+          # .github/workflows/container.yaml; see also
           # scripts/build-container.bash.
           kidneyos-builder = pkgs.dockerTools.buildNixShellImage {
-            name = "ghcr.io/kidneyos/kidneyos-builder";
+            name = builderImage;
             tag = "latest";
             drv = self.devShells.${system}.build;
           };
@@ -98,8 +104,8 @@
                 '';
         in
         {
-          # If you make changes to this, once they're merged be sure to push
-          # updated Docker images to the GitHub container registry. See
+          # Changes to this are published to the builder image by
+          # .github/workflows/container.yaml once they're merged. See
           # docs/building/docker.md#maintainers for details.
           build = mkShell {
             packages = [
