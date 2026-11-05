@@ -3,8 +3,8 @@
 
 default: release
 
-DEBUG_OUTPUT := target/i686-unknown-linux-gnu/debug/example_rust
-RELEASE_OUTPUT := target/i686-unknown-linux-gnu/release/example_rust
+DEBUG_OUTPUT := target/i586-unknown-linux-gnu/debug/example_rust
+RELEASE_OUTPUT := target/i586-unknown-linux-gnu/release/example_rust
 
 .PHONY: debug release
 release: $(RELEASE_OUTPUT)

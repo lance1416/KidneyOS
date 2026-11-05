@@ -11,20 +11,19 @@ use crate::user_program::syscall;
  * Each must be naked function with C linkage and the type fn() -> !
  */
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn unhandled_handler() -> ! {
     fn inner() -> ! {
         panic!("unhandled interrupt");
     }
 
-    asm!(
+    core::arch::naked_asm!(
         "call {}",
         sym inner,
-        options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn page_fault_handler() -> ! {
     unsafe fn inner(error_code: u32, return_eip: usize) {
         let vaddr: usize;
@@ -39,7 +38,7 @@ pub unsafe extern "C" fn page_fault_handler() -> ! {
         }
     }
 
-    asm!(
+    core::arch::naked_asm!(
         "
         pusha
         # pusha pushes 8 registers, so to get past them we need to add 8 * 4 = 32 bytes to the stack pointer
@@ -56,28 +55,26 @@ pub unsafe extern "C" fn page_fault_handler() -> ! {
         iretd
         ",
         sym inner,
-        options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn general_protection_fault_handler() -> ! {
     unsafe fn inner(error_code: u32, return_eip: usize) -> ! {
         panic!("general protection fault with error code {error_code:#b} occurred from instruction at {return_eip:#X}");
     }
 
-    asm!(
+    core::arch::naked_asm!(
         "
         call {}
         ",
         sym inner,
-        options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn syscall_handler() -> ! {
-    asm!(
+    core::arch::naked_asm!(
         "
         // Push arguments to stack.
         push edx
@@ -99,13 +96,12 @@ pub unsafe extern "C" fn syscall_handler() -> ! {
         iretd
         ",
         sym syscall::handler,
-        options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn timer_interrupt_handler() -> ! {
-    asm!(
+    core::arch::naked_asm!(
         "
         pusha
         // Push IRQ0 value onto the stack.
@@ -121,13 +117,12 @@ pub unsafe extern "C" fn timer_interrupt_handler() -> ! {
         sym timer::step_sys_clock,
         sym pic::send_eoi,
         sym scheduling::scheduler_yield_and_continue,
-        options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn ide_prim_interrupt_handler() -> ! {
-    asm!(
+    core::arch::naked_asm!(
     "
     pusha
     // Push IRQ14 value onto the stack.
@@ -143,13 +138,12 @@ pub unsafe extern "C" fn ide_prim_interrupt_handler() -> ! {
     sym ata_interrupt::on_ide_interrupt,
     sym pic::send_eoi,
     sym scheduling::scheduler_yield_and_continue,
-    options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn ide_secd_interrupt_handler() -> ! {
-    asm!(
+    core::arch::naked_asm!(
     "
     pusha
     // Push IRQ15 value onto the stack.
@@ -165,13 +159,12 @@ pub unsafe extern "C" fn ide_secd_interrupt_handler() -> ! {
     sym ata_interrupt::on_ide_interrupt,
     sym pic::send_eoi,
     sym scheduling::scheduler_yield_and_continue,
-    options(noreturn),
     )
 }
 
-#[naked]
+#[unsafe(naked)]
 pub unsafe extern "C" fn keyboard_handler() -> ! {
-    asm!(
+    core::arch::naked_asm!(
     "
     pusha
     // Push IRQ1 value onto the stack.
@@ -187,6 +180,5 @@ pub unsafe extern "C" fn keyboard_handler() -> ! {
     sym keyboard::atkbd::on_keyboard_interrupt,
     sym pic::send_eoi,
     sym scheduling::scheduler_yield_and_continue,
-    options(noreturn),
     )
 }

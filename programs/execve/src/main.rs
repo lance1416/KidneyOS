@@ -5,7 +5,7 @@ use core::ffi::c_char;
 use kidneyos_syscalls::O_CREATE;
 
 const TARGET_PROGRAM: &[u8] =
-    include_bytes!("../../example_rust/target/i686-unknown-linux-gnu/release/example_rust");
+    include_bytes!("../../example_rust/target/i586-unknown-linux-gnu/release/example_rust");
 
 const TARGET_PATH: *const c_char = c"/example_rust".as_ptr();
 

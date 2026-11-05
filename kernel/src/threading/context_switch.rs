@@ -132,13 +132,13 @@ macro_rules! restore_registers {
 /// The caller is responsible to remove these from the stack.
 ///
 /// Our return value will need to be placed into the %eax register.
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn context_switch(
     _switch_from: *mut ThreadControlBlock,
     _switch_to: *mut ThreadControlBlock,
 ) -> *mut ThreadControlBlock {
     // Our function arguments are placed on the stack Right to Left.
-    core::arch::asm!(
+    core::arch::naked_asm!(
         save_registers!(),
         load_arguments!(), // Required manually since this is a naked function.
         switch_stacks!(),
@@ -147,6 +147,5 @@ unsafe extern "C" fn context_switch(
             ret
         "#, // Required manually since this is a naked function.
         offset = const offset_of!(ThreadControlBlock, kernel_stack_pointer),
-        options(noreturn)
     )
 }

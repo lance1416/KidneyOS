@@ -3,8 +3,8 @@
 
 default: release
 
-DEBUG_OUTPUT := target/i686-unknown-linux-gnu/debug/pipes
-RELEASE_OUTPUT := target/i686-unknown-linux-gnu/release/pipes
+DEBUG_OUTPUT := target/i586-unknown-linux-gnu/debug/pipes
+RELEASE_OUTPUT := target/i586-unknown-linux-gnu/release/pipes
 
 .PHONY: debug release
 release: $(RELEASE_OUTPUT)

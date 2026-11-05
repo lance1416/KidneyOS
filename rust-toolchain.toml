@@ -1,6 +1,13 @@
 [toolchain]
 # NOTE: If this is changed, docs/building/from-source.md needs to be updated accordingly.
-channel = "nightly-2024-01-04"
+# nightly-2026-11-01 (rustc 1.101.0-nightly f9ceb4a4d 2026-10-31) was picked as a
+# recent nightly that builds KidneyOS cleanly (kernel via -Z build-std with the
+# custom i686-unknown-kernel target, programs, tests, clippy, rustfmt) and has
+# all of the components below available on x86_64/aarch64 Linux and macOS.
+# Nightly is still required for -Z build-std and the remaining unstable library
+# features (negative_impls, slice_ptr_get, and btreemap_alloc in tests).
+# i586-unknown-linux-gnu is used for user programs, see programs/*/.cargo/config.toml.
+channel = "nightly-2026-11-01"
 components = ["clippy", "llvm-tools-preview", "rustfmt", "rust-analyzer", "rust-src", "rust-std"]
-targets = ["i686-unknown-linux-gnu"]
+targets = ["i686-unknown-linux-gnu", "i586-unknown-linux-gnu"]
 profile = "minimal"

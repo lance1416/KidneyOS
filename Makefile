@@ -38,6 +38,7 @@ $(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/i686.ld $(TRAMPOLINE) 
 	  --manifest-path $< \
 	  --profile $(PROFILE) \
 	  --target build-support/i686-unknown-kernel.json \
+	  -Z json-target-spec \
 	  -Z build-std=core,alloc \
 	  -Z build-std-features=compiler-builtins-mem \
 	  -- \
@@ -51,6 +52,7 @@ $(RAW_TRAMPOLINE): trampoline/Cargo.toml Cargo.lock
 	  --manifest-path $< \
 	  --profile $(PROFILE) \
 	  --target build-support/i686-unknown-kernel.json \
+	  -Z json-target-spec \
 	  -Z build-std=core \
 	  -Z build-std-features=compiler-builtins-mem
 

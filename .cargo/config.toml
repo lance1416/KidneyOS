@@ -1,6 +1,12 @@
 [build]
 target = "i686-unknown-linux-gnu"
 
+# Used for host-side checks (clippy, tests). `-C target-feature=-sse` used to be
+# passed here too, but current rustc rejects disabling SSE/SSE2 on
+# i686-unknown-linux-gnu since its ABI requires it. Code that actually runs on
+# KidneyOS doesn't use this target: the kernel uses
+# build-support/i686-unknown-kernel.json and user programs use
+# i586-unknown-linux-gnu, neither of which use SSE.
 [target.i686-unknown-linux-gnu]
 linker = "i686-unknown-linux-gnu-cc"
-rustflags = ["-C", "link-arg=-e _start -nostartfiles", "-C", "target-feature=-sse"]
+rustflags = ["-C", "link-arg=-e _start -nostartfiles"]

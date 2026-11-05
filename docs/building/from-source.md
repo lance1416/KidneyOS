@@ -25,7 +25,7 @@ cd KidneyOS
 Next, we will install the specific version of the Rust toolchain used by KidneyOS. We will do this using rustup. You can install it by running the command on the [rustup website](https://rustup.rs/), or by installing the [`rustup`](https://repology.org/project/rustup/versions) package with your package manager. Once you've done so, run the following from the root of the KidneyOS repository:
 
 ```sh
-rustup override set nightly-2024-01-04-i686-unknown-linux-gnu
+rustup override set nightly-2026-11-01-i686-unknown-linux-gnu
 ```
 
 Running `cargo --version` should now print:

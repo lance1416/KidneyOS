@@ -1,7 +1,3 @@
-#![feature(allocator_api)]
-#![feature(asm_const)]
-#![feature(naked_functions)]
-#![feature(non_null_convenience)]
 #![feature(slice_ptr_get)]
 #![no_std]
 

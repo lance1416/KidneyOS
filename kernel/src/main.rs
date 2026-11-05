@@ -1,16 +1,8 @@
 #![cfg_attr(not(test), no_std)]
 #![cfg_attr(not(test), no_main)]
-#![feature(allocator_api)]
-#![feature(asm_const)]
-#![feature(btreemap_alloc)]
-#![feature(error_in_core)]
-#![feature(naked_functions)]
-#![feature(non_null_convenience)]
-#![feature(offset_of)]
-#![feature(slice_ptr_get)]
 #![feature(negative_impls)]
-#![feature(pointer_is_aligned)]
-#![feature(inline_const)]
+// Only used by the buddy allocator tests.
+#![cfg_attr(test, feature(btreemap_alloc, slice_ptr_get))]
 
 mod block;
 mod drivers;
@@ -54,7 +46,7 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
 }
 
 const INIT: &[u8] =
-    include_bytes!("../../programs/pipes/target/i686-unknown-linux-gnu/release/pipes").as_slice();
+    include_bytes!("../../programs/pipes/target/i586-unknown-linux-gnu/release/pipes").as_slice();
 
 #[cfg_attr(not(test), no_mangle)]
 extern "C" fn main(mem_upper: usize, video_memory_skip_lines: usize) -> ! {

@@ -1,6 +1,8 @@
 [build]
-target = "i686-unknown-linux-gnu"
+# i586 rather than i686: i686-unknown-linux-gnu requires SSE2, which KidneyOS
+# doesn't enable (or save/restore) for user programs.
+target = "i586-unknown-linux-gnu"
 
-[target.i686-unknown-linux-gnu]
+[target.i586-unknown-linux-gnu]
 linker = "i686-unknown-linux-gnu-cc"
 rustflags = ["-C", "link-args=-e _start -static -nostartfiles"]

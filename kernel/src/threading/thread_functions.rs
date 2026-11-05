@@ -143,13 +143,13 @@ impl PrepareThreadContext {
 }
 
 /// This function is used to clean up a thread's arguments and call into `run_thread`.
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn prepare_thread() -> i32 {
     // Since this function is only to be called from the `context_switch` function, we expect
     // That %eax and %edx contain the arguments passed to it.
     // Further, the entry function pointer is at a known position on the stack.
     // We move this into a register and call the run thread function.
-    asm!(
+    core::arch::naked_asm!(
         r#"
             # push [esp] # Already in place on stack.
             push edx
@@ -158,7 +158,6 @@ unsafe extern "C" fn prepare_thread() -> i32 {
             hlt     # Never return to here.
         "#,
         sym run_thread,
-        options(noreturn)
     )
 }
 

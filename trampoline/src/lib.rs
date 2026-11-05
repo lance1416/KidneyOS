@@ -1,5 +1,3 @@
-#![feature(asm_const)]
-#![feature(naked_functions)]
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(not(test), no_main)]
 
@@ -33,9 +31,9 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn _start() {
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         lea esp, kernel_end
         sub esp, {stack_size}
@@ -45,7 +43,6 @@ unsafe extern "C" fn _start() {
         ",
         sym trampoline,
         stack_size = const kidneyos_shared::mem::OFFSET - kidneyos_shared::mem::MAIN_STACK_SIZE,
-        options(noreturn),
     )
 }
 

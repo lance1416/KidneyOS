@@ -3,10 +3,10 @@
 
 default: release
 
-DEBUG_OUTPUT := target/i686-unknown-linux-gnu/debug/execve
-RELEASE_OUTPUT := target/i686-unknown-linux-gnu/release/execve
+DEBUG_OUTPUT := target/i586-unknown-linux-gnu/debug/execve
+RELEASE_OUTPUT := target/i586-unknown-linux-gnu/release/execve
 
-TARGET_PROGRAM := ../example_rust/target/i686-unknown-linux-gnu/release/execve
+TARGET_PROGRAM := ../example_rust/target/i586-unknown-linux-gnu/release/execve
 
 .PHONY: debug release
 release: $(RELEASE_OUTPUT)
