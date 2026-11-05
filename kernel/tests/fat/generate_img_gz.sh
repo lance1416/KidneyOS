@@ -2,7 +2,7 @@
 
 DIR="$1"
 
-if [ "$#" -ne 1 ] || [ '!' -d "$DIR" ]; then
+if [ "$#" -ne 1 ] || [ ! -d "$DIR" ]; then
     echo "Usage $0 <directory name>"
     exit 1
 fi

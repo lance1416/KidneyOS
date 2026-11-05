@@ -2,7 +2,7 @@
 
 DIR="$1"
 
-if [ "$#" -ne 1 ] || [ '!' -d "$DIR" ]; then
+if [ "$#" -ne 1 ] || [ ! -d "$DIR" ]; then
     echo "Usage $0 <directory name>"
     exit 1
 fi
@@ -21,8 +21,8 @@ copy_filesystem16() {
     # Use hdiutil instead of mount
     hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$1" || exit 1
     DEV=$(hdiutil info | grep '/dev/disk' | tail -n 1 | awk '{print $1}')
-    sudo newfs_msdos -F 16 $DEV || exit 1
-    sudo mount -t msdos $DEV mnt || exit 1
+    sudo newfs_msdos -F 16 "$DEV" || exit 1
+    sudo mount -t msdos "$DEV" mnt || exit 1
 
     echo '    Copying the files to the image...'
     sudo cp -r "${DIR}"/* mnt/ || exit 1
@@ -32,7 +32,7 @@ copy_filesystem16() {
 
     echo '    Unmounting the image...'
     sudo umount mnt || exit 1
-    hdiutil detach $DEV || exit 1
+    hdiutil detach "$DEV" || exit 1
 
     echo '    Compressing the image...'
     gzip "$1" || exit 1
@@ -46,8 +46,8 @@ copy_filesystem32() {
     # Use hdiutil instead of mount
     hdiutil attach -imagekey diskimage-class=CRawDiskImage -nomount "$1" || exit 1
     DEV=$(hdiutil info | grep '/dev/disk' | tail -n 1 | awk '{print $1}')
-    sudo newfs_msdos -F 32 $DEV || exit 1
-    sudo mount -t msdos $DEV mnt || exit 1
+    sudo newfs_msdos -F 32 "$DEV" || exit 1
+    sudo mount -t msdos "$DEV" mnt || exit 1
 
     echo '    Copying the files to the image...'
     sudo cp -r "${DIR}"/* mnt/ || exit 1
@@ -57,7 +57,7 @@ copy_filesystem32() {
 
     echo '    Unmounting the image...'
     sudo umount mnt || exit 1
-    hdiutil detach $DEV || exit 1
+    hdiutil detach "$DEV" || exit 1
 
     echo '    Compressing the image...'
     gzip "$1" || exit 1
