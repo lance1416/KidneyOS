@@ -200,7 +200,7 @@ impl<A: Allocator> PageManager<A> {
     pub fn is_loaded(&self) -> bool {
         let current_root: usize;
         unsafe { asm!("mov {}, cr3", out(reg) current_root, options(nomem, nostack)) };
-        current_root != self.root.as_ptr() as usize - self.phys_to_alloc_addr_offset
+        current_root == self.root.as_ptr() as usize - self.phys_to_alloc_addr_offset
     }
 
     /// Maps virtual addresses from `virt_addr..(virt_addr + PAGE_FRAME_SIZE)`

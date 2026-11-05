@@ -32,23 +32,17 @@ pub fn exit_thread(exit_code: i32) -> ! {
     scheduler_yield_and_die();
 }
 
+/// Frees what's left of a thread that has exited.
+///
+/// # Safety
+///
+/// `dying_thread` must not be running: its page tables mustn't be loaded,
+/// and the current stack mustn't be its kernel stack.
 pub unsafe fn clean_up_thread(mut dying_thread: Box<ThreadControlBlock>) {
-    unsafe {
-        let threads = &unwrap_system().threads;
-
-        dying_thread.reap();
-
-        // Page manager must be loaded to be dropped.
-        dying_thread.page_manager.load();
-        drop(dying_thread);
-        threads
-            .running_thread
-            .lock()
-            .as_ref()
-            .expect("a thread is running after switching")
-            .page_manager
-            .load();
-    }
+    dying_thread.reap();
+    // The running thread's page tables are loaded, not these, so they can be
+    // freed (dropping loaded page tables panics).
+    drop(dying_thread);
 }
 
 // Focibly stops the thread specified by Tid
