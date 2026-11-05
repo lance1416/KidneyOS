@@ -3,12 +3,12 @@ use core::{fmt, slice};
 /// Physical address of the VGA text mode buffer.
 pub const VIDEO_MEMORY_PHYS: usize = 0xb8000;
 /// Virtual address the VGA text mode buffer is accessed at. On i686 it is
-/// identity mapped; on x86_64 it is reached through the kernel's mapping of
-/// low physical memory, so that the identity map can go away.
+/// identity mapped; on x86_64 it is reached through the direct map of physical
+/// memory.
 #[cfg(target_arch = "x86")]
 pub const VIDEO_MEMORY_BASE: usize = VIDEO_MEMORY_PHYS;
 #[cfg(target_arch = "x86_64")]
-pub const VIDEO_MEMORY_BASE: usize = VIDEO_MEMORY_PHYS + crate::mem::KERNEL_BASE;
+pub const VIDEO_MEMORY_BASE: usize = VIDEO_MEMORY_PHYS + crate::mem::PHYS_MAP_OFFSET;
 pub const VIDEO_MEMORY_COLS: usize = 80;
 const VIDEO_MEMORY_LINES: usize = 25;
 pub const VIDEO_MEMORY_SIZE: usize = VIDEO_MEMORY_COLS * VIDEO_MEMORY_LINES;

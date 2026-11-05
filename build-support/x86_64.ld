@@ -56,6 +56,7 @@ SECTIONS {
     }
 
     .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_BASE) {
+        kernel_rodata_start = .;
         *(.rodata .rodata.*)
     }
 
@@ -84,9 +85,13 @@ SECTIONS {
     }
 }
 
-/* Physical addresses of the kernel image (excluding the boot stub before
-   it), for the kernel's frame allocator. */
+/* Physical addresses: the whole image as loaded (for the frame allocator to
+   avoid), and the parts of the kernel proper (excluding the boot stub before
+   it). The kernel maps .text executable, .rodata read-only and the rest
+   writable, so the sections must stay in this order. */
+image_start_phys = KERNEL_PHYS;
 kernel_start_phys = kernel_start - KERNEL_BASE;
+kernel_rodata_start_phys = kernel_rodata_start - KERNEL_BASE;
 kernel_data_start_phys = kernel_data_start - KERNEL_BASE;
 kernel_end_phys = kernel_end - KERNEL_BASE;
 

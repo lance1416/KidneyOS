@@ -10,6 +10,7 @@ mod boot;
 mod gdt;
 mod idt;
 mod kmain;
+mod paging;
 
 use core::{
     arch::asm,
@@ -37,7 +38,6 @@ pub fn disable_interrupts() {
 }
 
 /// Halts the CPU for good.
-#[allow(dead_code)]
 pub fn halt_forever() -> ! {
     loop {
         // SAFETY: Only stops the CPU; with interrupts disabled, only an NMI
