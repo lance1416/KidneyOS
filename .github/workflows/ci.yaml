@@ -1,7 +1,7 @@
 # Every job only orchestrates: the work itself is done by make targets, so
-# `make check` (plus `make smoke-test` and `make docs`) locally runs the same
-# checks as this workflow. Setup shared by the jobs is in
-# .github/actions/setup.
+# `make check` (plus `make smoke-test`, `make docs` and
+# `make ARCH=x86_64 clippy iso smoke-test`) locally runs the same checks as
+# this workflow. Setup shared by the jobs is in .github/actions/setup.
 name: CI
 
 on:
@@ -93,6 +93,32 @@ jobs:
           path: build/i686
       - name: Boot and wait for the shell prompt
         run: make smoke-test-iso
+
+  # The x86_64 port (`make ARCH=x86_64`), built and booted next to the i686
+  # kernel until it replaces it. Independent of the i686 jobs, and not required
+  # for deploying the docs.
+  x86_64:
+    name: Build and boot the x86_64 port
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+      - name: Set up Nix, the devShell and cargo caches
+        uses: ./.github/actions/setup
+      - name: Run clippy on the x86_64 kernel
+        run: make ARCH=x86_64 clippy
+      - name: Build the x86_64 ISO
+        run: make ARCH=x86_64 iso
+      - name: Boot it and wait for the greeting
+        run: make ARCH=x86_64 smoke-test
+      - name: Upload the ISO
+        uses: actions/upload-artifact@v7
+        with:
+          name: kidneyos-x86_64-iso
+          path: build/x86_64/kidneyos.iso
+          if-no-files-found: error
+          retention-days: 7
 
   docs:
     name: Build the docs
