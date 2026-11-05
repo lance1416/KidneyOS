@@ -1,0 +1,99 @@
+name: Publish Builder Image
+on:
+  push:
+    branches: [main]
+    paths:
+    - nix/**
+    - rust-toolchain.toml
+    - .github/workflows/container.yaml
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}
+  # Let an in-progress publish finish, so the per-architecture tags and the
+  # multi-architecture `latest` tag never point at different builds.
+  cancel-in-progress: false
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    name: Build and push ${{ matrix.arch }} image
+    strategy:
+      matrix:
+        include:
+        - arch: amd64
+          system: x86_64-linux
+          runner: ubuntu-latest
+        - arch: arm64
+          system: aarch64-linux
+          runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    outputs:
+      image: ${{ steps.load.outputs.image }}
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v23
+    - name: Cache Nix store
+      uses: DeterminateSystems/magic-nix-cache-action@v15
+    - name: Build image
+      run: nix build --out-link builder.tar.gz ./nix#packages.${{ matrix.system }}.kidneyos-builder
+    - name: Load image
+      id: load
+      run: |
+        # The image name comes from builderImage in nix/flake.nix.
+        loaded=$(docker load -i builder.tar.gz)
+        echo "$loaded"
+        ref=${loaded##*Loaded image: }
+        image=${ref%:latest}
+        owner=${GITHUB_REPOSITORY_OWNER,,}
+        if [[ $image != "ghcr.io/$owner/"* ]]; then
+          echo "::error::builderImage ($image) isn't under ghcr.io/$owner, which this workflow can push to"
+          exit 1
+        fi
+        echo "image=$image" >> "$GITHUB_OUTPUT"
+    - name: Smoke test image
+      env:
+        IMAGE: ${{ steps.load.outputs.image }}
+      run: |
+        # The image's command starts an interactive bash that loads the
+        # devShell environment; reuse it with -ic to run commands in it.
+        read -ra shell <<< "$(docker image inspect --format '{{join .Config.Cmd " "}}' "$IMAGE:latest")"
+        docker run --rm "$IMAGE:latest" "${shell[@]}" -ic \
+          'rustc --version && cargo --version && grub-mkrescue --version'
+    - name: Log in to ghcr.io
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Push image
+      env:
+        IMAGE: ${{ steps.load.outputs.image }}
+        ARCH: ${{ matrix.arch }}
+      run: |
+        docker tag "$IMAGE:latest" "$IMAGE:latest-$ARCH"
+        docker push "$IMAGE:latest-$ARCH"
+  merge:
+    name: Publish multi-architecture image
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Log in to ghcr.io
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create multi-architecture manifest
+      env:
+        IMAGE: ${{ needs.build.outputs.image }}
+      run: |
+        docker buildx imagetools create \
+          --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+          --annotation "index:org.opencontainers.image.revision=$GITHUB_SHA" \
+          --tag "$IMAGE:latest" \
+          --tag "$IMAGE:sha-${GITHUB_SHA::12}" \
+          "$IMAGE:latest-amd64" \
+          "$IMAGE:latest-arm64"
+        docker buildx imagetools inspect "$IMAGE:latest"
