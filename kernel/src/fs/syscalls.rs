@@ -87,8 +87,8 @@ pub fn lseek64(fd: usize, offset: *mut i64, whence: isize) -> isize {
     let Ok(fd) = FileDescriptor::try_from(fd) else {
         return -EBADF;
     };
-    // 32-bit x86 specific: isize and i32 are the same width. Revisit for the
-    // x86_64 port.
+    // `whence` is an int in C, which the stubs pass sign-extended to the
+    // register's width, so truncating it gets the value back.
     #[allow(clippy::cast_possible_truncation)]
     let whence = match whence as i32 {
         SEEK_SET => SeekFrom::Start,
@@ -409,7 +409,8 @@ pub fn dup2(old: isize, new: isize) -> isize {
         .unwrap_or_else(|err| -err.to_isize())
 }
 
-pub fn pipe(fds: *mut isize) -> isize {
+/// Writes the two new file descriptors to `fds`, an `int[2]` in C.
+pub fn pipe(fds: *mut i32) -> isize {
     let Some(fds) = (unsafe { get_mut_slice_from_user_space(fds, 2) }) else {
         return -EFAULT;
     };
@@ -418,8 +419,8 @@ pub fn pipe(fds: *mut isize) -> isize {
 
     match root_filesystem().lock().pipe(pid) {
         Ok((read_end, write_end)) => {
-            fds[0] = read_end as isize;
-            fds[1] = write_end as isize;
+            fds[0] = i32::from(read_end);
+            fds[1] = i32::from(write_end);
 
             0
         }
