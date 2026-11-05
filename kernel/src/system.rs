@@ -60,8 +60,18 @@ pub fn unwrap_system() -> &'static SystemState {
 /// Get reference to running process (panicks if no process is running)
 pub fn running_process() -> Arc<Mutex<ProcessControlBlock>> {
     let system = unwrap_system();
-    let pid = system.threads.running_thread.lock().as_ref().unwrap().pid;
-    system.process.table.get(pid).unwrap()
+    let pid = system
+        .threads
+        .running_thread
+        .lock()
+        .as_ref()
+        .expect("no running thread")
+        .pid;
+    system
+        .process
+        .table
+        .get(pid)
+        .expect("running thread has no process")
 }
 
 pub fn running_thread_pid() -> Pid {

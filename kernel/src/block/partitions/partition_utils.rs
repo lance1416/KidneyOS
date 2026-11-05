@@ -9,13 +9,16 @@ use crate::block::block_core::BlockSector;
 /// * `head` - The head number.
 /// * `sector` - The sector number.
 pub(crate) fn chs_to_lba(cylinder: u8, head: u8, sector: u8) -> BlockSector {
-    (cylinder as u32 * 16 + head as u32) * 63 + sector as u32 - 1
+    (u32::from(cylinder) * 16 + u32::from(head)) * 63 + u32::from(sector) - 1
 }
 
 /// Converts an LBA address to a CHS address.
 ///
 /// # Arguments
 /// * `lba` - The LBA address.
+// Sector and head always fit; the cylinder is intentionally truncated to the
+// 8-bit CHS field.
+#[allow(clippy::cast_possible_truncation)]
 pub(crate) fn lba_to_chs(lba: BlockSector) -> (u8, u8, u8) {
     let sector = lba % 63 + 1;
     let temp = lba / 63;

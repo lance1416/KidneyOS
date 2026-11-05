@@ -13,6 +13,10 @@ use fat::Fat;
 use zerocopy::little_endian::{U16, U32};
 use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
+/// `BLOCK_SECTOR_SIZE` (512) as a `u32`; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
+const BLOCK_SECTOR_SIZE_U32: u32 = BLOCK_SECTOR_SIZE as u32;
+
 #[derive(Debug)]
 struct FatFileInfo {
     vfs: FileInfo,
@@ -224,7 +228,7 @@ impl FatFS {
             fat32_header.verify_integrity()?;
             FatType::Fat32
         };
-        let disk_sectors_per_fat_sector = bytes_per_sector / BLOCK_SECTOR_SIZE as u32;
+        let disk_sectors_per_fat_sector = bytes_per_sector / BLOCK_SECTOR_SIZE_U32;
         // First disk sector in the FAT.
         let mut fat_first_disk_sector = reserved_sector_count * disk_sectors_per_fat_sector;
         if fat_type == FatType::Fat32 && !fat32_header.fat_mirroring_enabled() {
@@ -252,7 +256,7 @@ impl FatFS {
             0
         };
         let fat16_root_disk_sector_count =
-            base_header.fat16_root_ent_count() * 32 / BLOCK_SECTOR_SIZE as u32;
+            base_header.fat16_root_ent_count() * 32 / BLOCK_SECTOR_SIZE_U32;
         let disk_sectors_per_cluster =
             disk_sectors_per_fat_sector * u32::from(base_header.sectors_per_cluster);
         let root_clusters: Vec<u32> = if fat_type == FatType::Fat32 {
@@ -304,7 +308,7 @@ impl FatFS {
         first..first + self.fat16_root_disk_sector_count
     }
     fn cluster_size(&self) -> u32 {
-        self.disk_sectors_per_cluster * BLOCK_SECTOR_SIZE as u32
+        self.disk_sectors_per_cluster * BLOCK_SECTOR_SIZE_U32
     }
 }
 
@@ -367,14 +371,14 @@ impl SimpleFileSystem for FatFS {
             return Ok(0);
         };
         let info = &self.file_info[&file];
-        let file_size = info.vfs.size as u32;
+        let file_size = u32::try_from(info.vfs.size).expect("FAT file sizes are 32-bit");
         let mut read_count = 0;
         while !buf.is_empty() && offset < file_size {
             // read a single cluster from the file
             let cluster_index = offset / self.cluster_size();
             let cluster_offset = offset % self.cluster_size();
             let sector_within_cluster = cluster_offset % self.disk_sectors_per_cluster;
-            let sector_offset = cluster_offset % BLOCK_SECTOR_SIZE as u32;
+            let sector_offset = cluster_offset % BLOCK_SECTOR_SIZE_U32;
             let cluster = info.clusters[cluster_index as usize];
             let cluster_start = self.first_disk_sector_in_cluster(cluster);
             for sector in
@@ -387,8 +391,8 @@ impl SimpleFileSystem for FatFS {
                 //   - the amount of bytes left in the file
                 //   - the entire sector (starting from sector_offset)
                 let read_size = min(
-                    buf.len() as u32,
-                    min(file_size - offset, BLOCK_SECTOR_SIZE as u32 - sector_offset),
+                    u32::try_from(buf.len()).unwrap_or(u32::MAX),
+                    min(file_size - offset, BLOCK_SECTOR_SIZE_U32 - sector_offset),
                 );
                 buf[..read_size as usize].copy_from_slice(
                     &sector_data[sector_offset as usize..(sector_offset + read_size) as usize],

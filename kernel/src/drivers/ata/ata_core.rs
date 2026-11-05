@@ -75,7 +75,8 @@ pub extern "C" fn ide_init() -> i32 {
     for (c, channel_present) in CHANNELS.iter().zip(present) {
         for (j, device_present) in channel_present.into_iter().enumerate() {
             if device_present {
-                unsafe { identify_ata_device(c, j as u8, true) };
+                let dev_no = u8::try_from(j).expect("at most two devices per channel");
+                unsafe { identify_ata_device(c, dev_no, true) };
             } else {
                 // println!("IDE: Channel {:?} device {} not present", c.name, j);
             }
@@ -113,7 +114,11 @@ unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: boo
         channel.read_sector(&mut id);
 
         // Calculate capacity.
-        let capacity = usize::from_le_bytes(id[120..124].try_into().unwrap());
+        let capacity = usize::from_le_bytes(
+            id[120..124]
+                .try_into()
+                .expect("IDENTIFY capacity field is size_of::<usize>() bytes"),
+        );
         let name = if dev_no == 0 {
             channel.get_d0_name()
         } else {
@@ -133,12 +138,19 @@ unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: boo
         let idx = block_manager.write().register_block(
             BlockType::Raw,
             &name,
-            capacity as BlockSector,
+            // 32-bit x86 specific: usize is 32 bits, the same as BlockSector.
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                capacity as BlockSector
+            },
             Box::new(AtaDevice(dev_no)),
         );
 
         // partition_scan(block_manager.read().by_id(idx).unwrap().as_ref());
-        let block = block_manager.read().by_id(idx).unwrap();
+        let block = block_manager
+            .read()
+            .by_id(idx)
+            .expect("block device was just registered");
         partition_scan(block.as_ref());
     }
 }

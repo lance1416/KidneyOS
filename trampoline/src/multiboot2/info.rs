@@ -74,6 +74,8 @@ struct Headers {
 }
 
 impl Info {
+    // Small compile-time constant; `try_from` isn't const.
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn iter(&self) -> InfoIterator<'_> {
         InfoIterator {
             info: self,
@@ -99,7 +101,10 @@ impl<'a> InfoIterator<'a> {
         // a multiple of 8, meaning the result of curr_ptr is guaranteed to have
         // an alignment of at least 64, which is greater than what is required
         // by Headers.
-        unsafe { &*self.curr_ptr().cast::<Headers>() }
+        #[allow(clippy::cast_ptr_alignment)]
+        unsafe {
+            &*self.curr_ptr().cast::<Headers>()
+        }
     }
 }
 
@@ -112,7 +117,10 @@ impl<'a> Iterator for InfoIterator<'a> {
             END_TYPE => return None,
             COMMANDLINE_TYPE | BOOT_LOADER_NAME_TYPE | BASIC_MEMORY_INFO_TYPE => {
                 // SAFETY: Same as curr_headers.
-                unsafe { &*self.curr_ptr().cast::<InfoTag>() }
+                #[allow(clippy::cast_ptr_alignment)]
+                unsafe {
+                    &*self.curr_ptr().cast::<InfoTag>()
+                }
             }
             _ => {
                 // It is UB to cast this to a variant since its discriminant is

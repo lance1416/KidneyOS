@@ -402,7 +402,7 @@ impl BlockOp for Partition {
             .block_manager
             .read()
             .by_id(self.block_idx)
-            .unwrap()
+            .expect("partition's parent block device is registered")
             .read(sector + self.start, buf)
     }
 
@@ -411,7 +411,7 @@ impl BlockOp for Partition {
             .block_manager
             .read()
             .by_id(self.block_idx)
-            .unwrap()
+            .expect("partition's parent block device is registered")
             .write(sector + self.start, buf)
     }
 }
@@ -572,7 +572,7 @@ fn read_partition_table(
     }
 
     // Parse partitions
-    for entry in pt.entries.iter() {
+    for entry in &pt.entries {
         if entry.size == 0 || entry.partition_type == 0 {
             continue;
         } else if entry.partition_type == 0x05

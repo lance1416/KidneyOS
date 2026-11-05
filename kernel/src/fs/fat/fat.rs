@@ -45,8 +45,11 @@ impl Fat {
         sectors: core::ops::Range<u32>,
     ) -> Result<Self> {
         // read the FAT from disk.
-        let mut data =
-            vec![0u32; ((sectors.end - sectors.start) * (BLOCK_SECTOR_SIZE as u32 / 4)) as usize];
+        let mut data = vec![
+            0u32;
+            ((sectors.end - sectors.start) * (super::BLOCK_SECTOR_SIZE_U32 / 4))
+                as usize
+        ];
         for (i, sector) in sectors.enumerate() {
             device.read(
                 sector,
@@ -60,7 +63,8 @@ impl Fat {
             *entry = entry.swap_bytes();
         }
 
-        let fat_entry_count = data.len() as u32 * if r#type == FatType::Fat16 { 2 } else { 1 };
+        let fat_entry_count = u32::try_from(data.len()).expect("FAT length was computed from u32")
+            * if r#type == FatType::Fat16 { 2 } else { 1 };
         if fat_entry_count < cluster_count {
             return error!("FAT size is too small");
         }
@@ -93,6 +97,8 @@ impl Fat {
         match self.r#type {
             FatType::Fat16 => {
                 let first_half = if cfg!(target_endian = "little") { 0 } else { 1 };
+                // Intentional: a FAT16 entry is one 16-bit half of a u32.
+                #[allow(clippy::cast_possible_truncation)]
                 let raw_entry = if i % 2 == first_half {
                     self.data[i as usize / 2] as u16
                 } else {

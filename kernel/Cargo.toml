@@ -17,3 +17,6 @@ ticket_mutex = []
 
 [dev-dependencies]
 flate2 = "1.1.10"
+
+[lints]
+workspace = true

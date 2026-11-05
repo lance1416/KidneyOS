@@ -40,7 +40,7 @@ impl InputBuffer {
         self.buf[self.head] = c;
         self.head = (self.head + 1) % BUFFER_SIZE;
 
-        for callback in self.on_receive.iter() {
+        for callback in &self.on_receive {
             callback(c);
         }
     }

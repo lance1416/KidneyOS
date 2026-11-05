@@ -45,6 +45,8 @@ pub struct TaskStateSegment {
     pub ssp: u32,
 }
 
+// The TSS size is a small compile-time constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 pub static mut TASK_STATE_SEGMENT: TaskStateSegment = {
     // Initialize zeroed TSS and set only the relevant fields.
     let mut tss: TaskStateSegment = unsafe { transmute([0_u8; size_of::<TaskStateSegment>()]) };

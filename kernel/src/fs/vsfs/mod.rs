@@ -59,6 +59,10 @@ pub struct VSFS {
 }
 
 impl VSFS {
+    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
+    // `BlockSector`s, which are the same width on the target. Revisit for the
+    // x86_64 port.
+    #[allow(clippy::cast_possible_truncation)]
     pub fn new(block: Block) -> Result<Self> {
         // Read the superblock from the first block
         let mut superblock = SuperBlock {
@@ -75,19 +79,26 @@ impl VSFS {
         block.read(0, &mut first_sector)?;
 
         // Parse the superblock from the first sector
-        superblock.magic_number = u64::from_le_bytes(first_sector[0..8].try_into().unwrap());
+        superblock.magic_number =
+            u64::from_le_bytes(first_sector[0..8].try_into().expect("fixed-size slice"));
 
         // Check if the magic number matches
         if superblock.magic_number != VSFS_MAGIC {
             return Err(Error::Unsupported);
         }
 
-        superblock.fs_size = u64::from_le_bytes(first_sector[8..16].try_into().unwrap());
-        superblock.num_inodes = u32::from_le_bytes(first_sector[16..20].try_into().unwrap());
-        superblock.free_inodes = u32::from_le_bytes(first_sector[20..24].try_into().unwrap());
-        superblock.num_blocks = u32::from_le_bytes(first_sector[24..28].try_into().unwrap());
-        superblock.free_blocks = u32::from_le_bytes(first_sector[28..32].try_into().unwrap());
-        superblock.data_start = u32::from_le_bytes(first_sector[32..36].try_into().unwrap());
+        superblock.fs_size =
+            u64::from_le_bytes(first_sector[8..16].try_into().expect("fixed-size slice"));
+        superblock.num_inodes =
+            u32::from_le_bytes(first_sector[16..20].try_into().expect("fixed-size slice"));
+        superblock.free_inodes =
+            u32::from_le_bytes(first_sector[20..24].try_into().expect("fixed-size slice"));
+        superblock.num_blocks =
+            u32::from_le_bytes(first_sector[24..28].try_into().expect("fixed-size slice"));
+        superblock.free_blocks =
+            u32::from_le_bytes(first_sector[28..32].try_into().expect("fixed-size slice"));
+        superblock.data_start =
+            u32::from_le_bytes(first_sector[32..36].try_into().expect("fixed-size slice"));
 
         let mut data_blocks = Vec::new();
 
@@ -163,7 +174,7 @@ impl VSFS {
                     inode = Inode::read_from_bytes(
                         &buffer[k * VSFS_INODE_SIZE..(k + 1) * VSFS_INODE_SIZE],
                     )
-                    .unwrap();
+                    .expect("inode slice is VSFS_INODE_SIZE bytes");
                     // inode.mode = u32::from_le_bytes(
                     //     buffer[k * VSFS_INODE_SIZE..k * VSFS_INODE_SIZE + 4]
                     //         .try_into()
@@ -264,6 +275,10 @@ impl SimpleFileSystem for VSFS {
     }
 
     // Read the directory entries for the given inode
+    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
+    // `BlockSector`s, which are the same width on the target. Revisit for the
+    // x86_64 port.
+    #[allow(clippy::cast_possible_truncation)]
     fn readdir(&mut self, dir: INodeNum) -> Result<DirEntries> {
         // Read the inode from the inodes vector
         let inode = self.inodes[dir as usize];
@@ -292,7 +307,7 @@ impl SimpleFileSystem for VSFS {
         while db_index < inode.block_count * VSFS_BLOCK_SIZE as u32 {
             let slice = &data[db_index as usize..(db_index + 256) as usize];
 
-            let inode_num = u32::from_le_bytes(slice[0..4].try_into().unwrap());
+            let inode_num = u32::from_le_bytes(slice[0..4].try_into().expect("fixed-size slice"));
             if inode_num < 0x8000 {
                 // First get the file name
                 let file_name = &slice[4..];
@@ -335,6 +350,11 @@ impl SimpleFileSystem for VSFS {
         todo!()
     }
 
+    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
+    // `BlockSector`s, which are the same width on the target. Revisit for the
+    // x86_64 port.
+    // `read_size as isize` intentionally wraps to detect `offset > file_size`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn read(&mut self, file: INodeNum, offset: u64, buf: &mut [u8]) -> Result<usize> {
         // Assume offset is a multiple of the sector size
         // TODO: implement offset && correct read size && handle odd buf size
@@ -395,8 +415,11 @@ impl SimpleFileSystem for VSFS {
             // Iterate through the indirect block. every 8 bytes is a data block number. Store the data block number in a vector
             let mut indirect_blocks = Vec::new();
             for i in 0..indirect_data.len() / 8 {
-                let data_block =
-                    u32::from_le_bytes(indirect_data[(i * 4)..(i * 4 + 4)].try_into().unwrap());
+                let data_block = u32::from_le_bytes(
+                    indirect_data[(i * 4)..(i * 4 + 4)]
+                        .try_into()
+                        .expect("fixed-size slice"),
+                );
                 if data_block != 0 {
                     indirect_blocks.push(data_block);
                 }

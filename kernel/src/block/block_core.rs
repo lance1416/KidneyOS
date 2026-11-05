@@ -260,7 +260,7 @@ impl BlockManager {
 impl fmt::Display for BlockManager {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Block Devices:")?;
-        for block in self.all_blocks.iter() {
+        for block in &self.all_blocks {
             writeln!(f, "{}", block)?;
         }
         Ok(())

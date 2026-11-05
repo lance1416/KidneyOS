@@ -338,6 +338,8 @@ impl AtaChannel {
     /// # Safety
     ///
     /// This function must be called with interrupts enabled.
+    // Intentional: the LBA is split into 8-bit register writes.
+    #[allow(clippy::cast_possible_truncation)]
     pub unsafe fn select_sector(&self, dev_no: u8, sector: BlockSector, block: bool) {
         unsafe {
             self.select_device_wait(dev_no, block);

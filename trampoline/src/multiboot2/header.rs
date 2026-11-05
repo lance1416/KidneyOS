@@ -22,10 +22,14 @@ struct HeaderTag {
 
 const MAGIC: u32 = 0xE85250D6;
 const ARCHITECTURE: u32 = 0;
+// Small compile-time constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 const HEADER_LENGTH: u32 = size_of::<Header>() as u32;
 
 #[used]
 #[unsafe(link_section = ".multiboot2_header")]
+// Small compile-time constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 static HEADER: Header = Header {
     magic: MAGIC,
     architecture: ARCHITECTURE,

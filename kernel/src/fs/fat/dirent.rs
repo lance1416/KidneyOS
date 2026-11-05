@@ -57,7 +57,8 @@ struct Directory {
 
 impl Directory {
     fn read_one_entry(&mut self, bytes: &[u8]) -> Result<ControlFlow<()>> {
-        let entry: &FatDirEntry = FatDirEntry::ref_from_bytes(bytes).unwrap();
+        let entry: &FatDirEntry =
+            FatDirEntry::ref_from_bytes(bytes).expect("directory entry is 32 bytes");
         let attr = entry.attr;
         if bytes[0] == 0 {
             // this entry is free, and all entries following it are free.
@@ -66,7 +67,8 @@ impl Directory {
             // this entry is free, but there may be more entries after it.
         } else if attr == ATTR_LONG_NAME {
             // a "long name" entry (stores part of a file name)
-            let entry: &FatDirEntryLongName = FatDirEntryLongName::ref_from_bytes(bytes).unwrap();
+            let entry: &FatDirEntryLongName =
+                FatDirEntryLongName::ref_from_bytes(bytes).expect("directory entry is 32 bytes");
             // Oddly, the "long name" entries are stored in reverse.
             // So we reverse each entry, then reverse the whole thing at the end.
             for c in entry.name3.chunks(2).rev() {

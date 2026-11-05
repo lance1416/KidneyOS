@@ -44,8 +44,8 @@ fn nsleep_block(t: u64) {
             );
         }
 
-        let start = ((start_hi as u64) << 32) | (start_lo as u64);
-        let current = ((current_hi as u64) << 32) | (current_lo as u64);
+        let start = (u64::from(start_hi) << 32) | u64::from(start_lo);
+        let current = (u64::from(current_hi) << 32) | u64::from(current_lo);
 
         if current - start >= cycles_to_wait {
             return; // Exit the loop once the desired number of cycles has passed

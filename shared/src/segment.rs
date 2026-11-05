@@ -36,6 +36,8 @@ impl SegmentDescriptor {
     pub const fn limit(&self) -> u32 {
         ((self.limit_high() as u32) << 16) | (self.limit_low() as u32)
     }
+    // Intentional: split the limit into its descriptor bitfields.
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn with_limit(self, value: u32) -> Self {
         self.with_limit_low(value as u16)
             .with_limit_high((value >> 16) as u8)
@@ -46,6 +48,8 @@ impl SegmentDescriptor {
             | ((self.base_mid() as u32) << 16)
             | (self.base_low() as u32)
     }
+    // Intentional: split the base into its descriptor bitfields.
+    #[allow(clippy::cast_possible_truncation)]
     pub const fn with_base(self, value: u32) -> Self {
         self.with_base_low(value as u16)
             .with_base_mid((value >> 16) as u8)

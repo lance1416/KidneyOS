@@ -33,7 +33,7 @@ pub fn getrandom(buffer: &mut [u8], length: usize, _flags: usize) -> isize {
                 let random_bytes = random_int.to_le_bytes();
                 buffer[i * 4..i * 4 + 4].copy_from_slice(&random_bytes);
             }
-            None => return bytes_written.try_into().unwrap(),
+            None => return bytes_written.try_into().expect("byte count fits in isize"),
         }
     }
 
@@ -48,5 +48,5 @@ pub fn getrandom(buffer: &mut [u8], length: usize, _flags: usize) -> isize {
         bytes_written += remainder;
     }
 
-    bytes_written.try_into().unwrap()
+    bytes_written.try_into().expect("byte count fits in isize")
 }

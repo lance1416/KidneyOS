@@ -26,10 +26,11 @@ bitfield!(
 impl GateDescriptor {
     #[allow(dead_code)]
     pub fn offset(&self) -> u32 {
-        ((self.offset_high() as u32) << 16) | (self.offset_low() as u32)
+        (u32::from(self.offset_high()) << 16) | u32::from(self.offset_low())
     }
 
-    #[allow(dead_code)]
+    // Intentional: split the handler offset into its two 16-bit halves.
+    #[allow(dead_code, clippy::cast_possible_truncation)]
     pub fn with_offset(self, value: u32) -> Self {
         self.with_offset_low(value as u16)
             .with_offset_high((value >> 16) as u16)
@@ -51,6 +52,8 @@ static mut IDT: [GateDescriptor; IDT_LEN] = [GateDescriptor::default(); IDT_LEN]
 // where we're entering a handler from usermode though, because when doing that
 // we get the new stack from the TSS.
 
+// The IDT size is a small compile-time constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 static mut IDT_DESCRIPTOR: IDTDescriptor = IDTDescriptor {
     size: size_of::<[GateDescriptor; IDT_LEN]>() as u16 - 1,
     offset: 0, // Will fetch pointer and set at runtime below.
@@ -60,6 +63,9 @@ static mut IDT_DESCRIPTOR: IDTDescriptor = IDTDescriptor {
 ///
 /// Can only be executed within code that expects the interrupt handlers to be
 /// defined as they are described in intr_handler.rs
+// 32-bit x86 specific: gate descriptors hold 32-bit handler addresses. Revisit
+// for the x86_64 port.
+#[allow(clippy::cast_possible_truncation)]
 pub unsafe fn load() {
     unsafe {
         IDT_DESCRIPTOR.offset = (&raw const IDT).cast::<GateDescriptor>() as u32;

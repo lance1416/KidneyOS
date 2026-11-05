@@ -165,7 +165,7 @@ impl Directory {
                 return Err(Error::IO("file name too long".into()));
             };
             let dirent = Dirent {
-                offset: off as i64,
+                offset: off.cast_signed(),
                 inode,
                 reclen,
                 r#type: r#type.to_u8(),
@@ -408,7 +408,7 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
         let inode = result?;
         self.directories
             .get_mut(&parent)
-            .unwrap()
+            .expect("parent directory should be cached")
             .add(inode, INodeType::Directory, name);
         self.directories.insert(inode, Directory::empty(parent));
         Ok(())
@@ -505,7 +505,8 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
                     // enormous link. will probably never happen.
                     return Err(Error::IO("symlink too large".into()));
                 }
-                let mut buf = vec![0u8; st.size as usize];
+                let mut buf =
+                    vec![0u8; usize::try_from(st.size).expect("checked against isize::MAX above")];
                 let s = self
                     .fs
                     .readlink(&mut handle.handle, &mut buf[..])?
@@ -581,7 +582,7 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
         result?;
         self.directories
             .get_mut(&parent)
-            .unwrap()
+            .expect("parent directory should be cached")
             .add(source, INodeType::File, name);
         Ok(())
     }
@@ -595,7 +596,7 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
         let symlink_inode = result?;
         self.directories
             .get_mut(&parent)
-            .unwrap()
+            .expect("parent directory should be cached")
             .add(symlink_inode, INodeType::Link, name);
         Ok(())
     }
@@ -625,7 +626,7 @@ impl<F: 'static + FileSystem> FileSystemManagerTrait for FileSystemManager<F> {
                     .expect("shouldn't overflow usize (each open file requires ≥1 byte of memory)");
             }
             BTreeMapEntry::Vacant(v) => {
-                v.insert(NonZeroUsize::new(1).unwrap());
+                v.insert(NonZeroUsize::MIN);
             }
         }
     }
@@ -736,7 +737,7 @@ impl FileSystemList {
         for (id, slot) in self.0.iter_mut().enumerate() {
             if slot.is_none() {
                 *slot = Some(Box::new(FileSystemManager::new(fs, mount_point)));
-                new_fs = Some(id as FileSystemID);
+                new_fs = Some(FileSystemID::try_from(id).expect("id < MAX_MOUNT_POINTS"));
                 break;
             }
         }
@@ -844,7 +845,7 @@ impl RootFileSystem {
         Ok((root_fs, self.file_systems.get(root_fs).root()))
     }
     fn new_fd(&mut self, pid: Pid, file_info: OpenFile) -> Result<ProcessFileDescriptor> {
-        for fd in 0..MAX_OPEN_FILES as FileDescriptor {
+        for fd in 0..MAX_OPEN_FILES.cast_signed() {
             let fd = ProcessFileDescriptor { pid, fd };
             if let alloc::collections::btree_map::Entry::Vacant(entry) = self.open_files.entry(fd) {
                 entry.insert(file_info);
@@ -883,7 +884,9 @@ impl RootFileSystem {
         self.file_systems.remove(child_fs_id);
         let parent_fs = self.file_systems.get_mut(parent_fs_id);
         // parent_fs.unmount should only fail if inode isn't a mount point, but we checked that already.
-        parent_fs.unmount(inode).unwrap();
+        parent_fs
+            .unmount(inode)
+            .expect("inode was checked to be a mount point");
         Ok(())
     }
     pub fn mount_root<F: FileSystem + 'static>(&mut self, fs: F) -> Result<()> {
@@ -961,7 +964,7 @@ impl RootFileSystem {
                     if fs.fstat(fd)?.r#type == INodeType::Directory {
                         // set is_dir to true in open file info
                         let OpenFile::Regular { is_dir, .. } =
-                            self.open_files.get_mut(&fd).unwrap()
+                            self.open_files.get_mut(&fd).expect("fd was just inserted")
                         else {
                             panic!();
                         };
@@ -1157,7 +1160,7 @@ impl RootFileSystem {
                         if *is_dir {
                             return Err(Error::IsDirectory);
                         }
-                        *file_offset as i64
+                        file_offset.cast_signed()
                     }
                     SeekFrom::End => {
                         // only SEEK_SET should be used for directories
@@ -1165,7 +1168,7 @@ impl RootFileSystem {
                             return Err(Error::IsDirectory);
                         }
                         let fs = self.file_systems.get_mut(*fs);
-                        fs.size_of_file(fd)? as i64
+                        fs.size_of_file(fd)?.cast_signed()
                     }
                 })
                 .ok_or(Error::BadOffset)?;
@@ -1180,12 +1183,12 @@ impl RootFileSystem {
     /// Panics if the file descriptors 0, 1, 2 are already in use for pid.
     pub fn open_standard_fds(&mut self, pid: Pid) {
         // for now, ignore stdin (we don't have keyboard input set up yet)
-        let stdin = self.open_null(pid).unwrap();
+        let stdin = self.open_null(pid).expect("failed to open stdin");
         assert_eq!(stdin, 0);
-        let stdout = self.open_stdout(pid).unwrap();
+        let stdout = self.open_stdout(pid).expect("failed to open stdout");
         assert_eq!(stdout, 1);
         // stderr and stdout can just go to the same place for now
-        let stderr = self.open_stdout(pid).unwrap();
+        let stderr = self.open_stdout(pid).expect("failed to open stderr");
         assert_eq!(stderr, 2);
     }
     pub fn chdir(&mut self, process: &mut ProcessControlBlock, path: &Path) -> Result<()> {

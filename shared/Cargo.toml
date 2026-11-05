@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 spin = { version = "0.12.3", default-features = false, features = ["lazy"] }
 pastey = "0.2.3"
+
+[lints]
+workspace = true

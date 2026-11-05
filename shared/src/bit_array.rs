@@ -8,6 +8,8 @@ macro_rules! impl_bitarray {
                 pub const fn get(&self, idx: usize) -> bool {
                     (self.0 >> idx & 1) != 0
                 }
+                // The shift amount `low` is always smaller than the bit width.
+                #[allow(clippy::cast_possible_truncation)]
                 pub const fn get_range(&self, low: usize, high: usize) -> $v {
                     let mask = ((1 << high - low) - 1 | 1 << high - low) << low;
                     (self.0 & mask) >> low as $v
@@ -51,7 +53,8 @@ macro_rules! bitfield {
 
             $(
                 $crate::__pastey::paste! {
-                    #[allow(dead_code)]
+                    // Intentional: the range is masked to fit in `$r_t`.
+                    #[allow(dead_code, clippy::cast_possible_truncation)]
                     pub const fn $r_name(&self) -> $r_t { self.0.get_range($r_low, $r_high) as $r_t }
                     #[allow(dead_code)]
                     pub const fn [<with_ $r_name>](self, value: $r_t) -> Self {

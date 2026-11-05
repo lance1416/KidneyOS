@@ -247,7 +247,7 @@ impl SimpleFileSystem for TempFS {
             );
         };
         let mut entries = DirEntries::new();
-        for (name, inode_num) in dir.entries.iter() {
+        for (name, inode_num) in &dir.entries {
             let inode = self
                 .inodes
                 .get(inode_num)
@@ -284,7 +284,7 @@ impl SimpleFileSystem for TempFS {
             // can't read any data
             return Ok(0);
         }
-        let offset = offset as usize; // fits into usize by check above
+        let offset = usize::try_from(offset).expect("offset < data.len() by check above");
         let read_len = min(buf.len(), f.data.len() - offset);
         buf[..read_len].copy_from_slice(&f.data[offset..offset + read_len]);
         Ok(read_len)
@@ -304,7 +304,7 @@ impl SimpleFileSystem for TempFS {
             // file data would exceed isize::MAX bytes
             return Err(Error::NoSpace);
         }
-        let offset = offset as usize;
+        let offset = usize::try_from(offset).expect("offset <= isize::MAX by check above");
         // amount we need to grow the file by
         let grow_amount = (offset + buf.len()).saturating_sub(f.data.len());
         // return no space error if allocation failed
@@ -444,7 +444,8 @@ impl SimpleFileSystem for TempFS {
         };
         if size <= file.data.len() as u64 {
             // shrink file
-            file.data.truncate(size as usize);
+            file.data
+                .truncate(usize::try_from(size).expect("size <= data.len() by check above"));
         } else {
             // grow file
             let size: usize = size.try_into().map_err(|_| Error::NoSpace)?;

@@ -9,3 +9,6 @@ test = false
 
 [dependencies]
 kidneyos-shared.path = "../shared"
+
+[lints]
+workspace = true

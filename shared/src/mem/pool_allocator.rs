@@ -50,6 +50,8 @@ impl<const N: usize> PoolAllocator<N> {
             let region_ptr = region.as_ptr();
 
             // The first block is used to store how large the bitmap is, in units of bytes
+            // The region is asserted above to be aligned to N >= size_of::<usize>().
+            #[allow(clippy::cast_ptr_alignment)]
             ptr::write(region_ptr.cast::<usize>(), bitmap_size);
 
             // Initialize the bitmap area to zero, which is 1 block away from the start
@@ -106,6 +108,8 @@ unsafe impl<const N: usize> Allocator for PoolAllocator<N> {
 
         // Obtain the bitmap from the region
         // Size of the bitmap is in the first block
+        // The region was checked in `new` to be aligned to N >= size_of::<usize>().
+        #[allow(clippy::cast_ptr_alignment)]
         let bitmap_size = unsafe { *(self.region.as_ptr() as *const usize) };
 
         // Get a pointer to the start of the bitmap, the bitmap starts 1 block away from the start

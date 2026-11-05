@@ -46,7 +46,7 @@ pub unsafe fn clean_up_thread(mut dying_thread: Box<ThreadControlBlock>) {
             .running_thread
             .lock()
             .as_ref()
-            .unwrap()
+            .expect("a thread is running after switching")
             .page_manager
             .load();
     }

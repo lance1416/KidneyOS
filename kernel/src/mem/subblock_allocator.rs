@@ -69,7 +69,7 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
                 //
                 // Think of this as doing a linked_list.pop_from_head() operation
                 self.list_heads[subblock_size_index] = node.next.take();
-                Ok(node as *mut ListNode as *mut u8)
+                Ok((node as *mut ListNode).cast::<u8>())
             }
             None => {
                 // If no block currently exists, we need to allocate a frame and divide the frame
@@ -80,7 +80,7 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
 
                 let new_frame = self.frame_allocator.alloc(1)?;
 
-                let start_of_frame = new_frame.as_ptr() as *const u8;
+                let start_of_frame = new_frame.as_ptr().cast_const();
                 let num_subblocks = PAGE_FRAME_SIZE / SUBBLOCK_SIZES[subblock_size_index];
 
                 // Begin to divide the frame into the required subblock sizes
@@ -88,6 +88,9 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
                     let next = self.list_heads[subblock_size_index].take();
                     let new_node = ListNode { next };
 
+                    // The frame is page-aligned and every subblock size is a
+                    // multiple of ListNode's alignment.
+                    #[allow(clippy::cast_ptr_alignment)]
                     unsafe {
                         let start_of_subblock_ptr = start_of_frame
                             .add(SUBBLOCK_SIZES[subblock_size_index] * i)
@@ -101,9 +104,11 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
                 assert!(self.list_heads[subblock_size_index].is_some());
 
                 // Return the head of the linked list
-                let node = self.list_heads[subblock_size_index].take().unwrap();
+                let node = self.list_heads[subblock_size_index]
+                    .take()
+                    .expect("frame was just split into subblocks");
                 self.list_heads[subblock_size_index] = node.next.take();
-                Ok(node as *mut ListNode as *mut u8)
+                Ok((node as *mut ListNode).cast::<u8>())
             }
         }
     }
@@ -124,7 +129,8 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
             let subblock_size_index = get_best_subblock_size_idx(layout);
 
             if subblock_size_index == SUBBLOCK_TYPE_COUNT {
-                self.frame_allocator.dealloc(NonNull::new(ptr).unwrap());
+                self.frame_allocator
+                    .dealloc(NonNull::new(ptr).expect("deallocated pointer is non-null"));
             } else {
                 assert!(size_of::<ListNode>() <= SUBBLOCK_SIZES[subblock_size_index]);
 
@@ -132,7 +138,10 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
                     next: self.list_heads[subblock_size_index].take(),
                 };
 
-                let new_node_ptr = ptr as *mut ListNode;
+                // `ptr` was handed out by `allocate` for this subblock size, so
+                // it is aligned for ListNode.
+                #[allow(clippy::cast_ptr_alignment)]
+                let new_node_ptr = ptr.cast::<ListNode>();
                 new_node_ptr.write(new_node);
                 self.list_heads[subblock_size_index] = Some(&mut *new_node_ptr);
             }
@@ -187,7 +196,7 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
         let mut head = &self.list_heads[index];
         while head.is_some() {
             length += 1;
-            head = &head.as_ref().unwrap().next;
+            head = &head.as_ref().expect("checked is_some").next;
         }
 
         length

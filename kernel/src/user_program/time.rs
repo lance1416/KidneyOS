@@ -36,9 +36,12 @@ fn rtc_to_unix_timestamp(
         days += 1;
     }
 
-    days += day as i32 - 1;
+    days += i32::from(day) - 1;
 
-    days as i64 * 24 * 3600 + hours as i64 * 3600 + minutes as i64 * 60 + seconds as i64
+    i64::from(days) * 24 * 3600
+        + i64::from(hours) * 3600
+        + i64::from(minutes) * 60
+        + i64::from(seconds)
 }
 
 // Check if a year is a leap year
@@ -59,14 +62,14 @@ pub fn get_tsc() -> Timespec {
         );
     }
 
-    let tsc = ((tsc_high as u64) << 32) | (tsc_low as u64);
+    let tsc = (u64::from(tsc_high) << 32) | u64::from(tsc_low);
 
     let seconds = tsc / TICKS_PER_SECOND;
     let nanoseconds = (tsc % TICKS_PER_SECOND) * (1_000_000_000 / TICKS_PER_SECOND);
 
     Timespec {
-        tv_sec: seconds as i64,
-        tv_nsec: nanoseconds as i64,
+        tv_sec: seconds.cast_signed(),
+        tv_nsec: nanoseconds.cast_signed(),
     }
 }
 
@@ -138,7 +141,7 @@ pub fn get_rtc() -> Timespec {
         );
     }
 
-    let full_year = 2000 + year as i32;
+    let full_year = 2000 + i32::from(year);
 
     let unix_time = rtc_to_unix_timestamp(full_year, month, day, hours, minutes, seconds);
 

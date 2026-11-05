@@ -138,10 +138,10 @@ pub fn on_keyboard_interrupt() {
     let _alt: bool = L_ALT.load(Relaxed) || R_ALT.load(Relaxed);
 
     // Read the scancode
-    let mut code = unsafe { inb(DATA_PORT) } as u16;
+    let mut code = u16::from(unsafe { inb(DATA_PORT) });
     if code == 0xe0 {
         // Extended scancode
-        code = code << 8 | (unsafe { inb(DATA_PORT) } as u16);
+        code = code << 8 | u16::from(unsafe { inb(DATA_PORT) });
     }
 
     // > 0x80 means key release
@@ -204,6 +204,9 @@ pub fn on_keyboard_interrupt() {
 }
 
 /// Scans the array of keymaps `k` for `scancode`.
+// Keymap strings are short static tables, so their length fits in u16. Kept as
+// a cast since this runs in the keyboard interrupt handler.
+#[allow(clippy::cast_possible_truncation)]
 fn map_key(k: &[Keymap], scancode: u16) -> Option<u8> {
     for keymap in k {
         if keymap.first_scancode != 0

@@ -54,7 +54,12 @@ static mut GDT: [SegmentDescriptor; GDT_LEN] = [
         // Executable doesn't actually mean executable here, we just have to
         // set flags in a particular way since this is a TSS.
         .with_executable(true)
-        .with_limit(size_of::<TaskStateSegment>() as u32 - 1)
+        // TSS size is a small compile-time constant; `try_from` isn't const.
+        .with_limit({
+            #[allow(clippy::cast_possible_truncation)]
+            let limit = size_of::<TaskStateSegment>() as u32 - 1;
+            limit
+        })
         .with_present(true),
 ];
 
@@ -69,10 +74,14 @@ pub const USER_DATA_SELECTOR: u16 = SegmentSelector::default()
     .with_index(4)
     .load();
 const TSS_INDEX: usize = 5;
+// TSS_INDEX is a small constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 const TSS_SELECTOR: u16 = SegmentSelector::default()
     .with_index(TSS_INDEX as u16)
     .load();
 
+// The GDT size is a small compile-time constant; `try_from` isn't const.
+#[allow(clippy::cast_possible_truncation)]
 static mut GDT_DESCRIPTOR: GDTDescriptor = GDTDescriptor {
     size: size_of::<[SegmentDescriptor; GDT_LEN]>() as u16 - 1,
     offset: 0, // Will fetch pointer and set at runtime below.

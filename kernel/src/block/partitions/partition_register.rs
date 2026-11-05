@@ -52,7 +52,7 @@ fn register_swap_partition(
         return Err(BlockError::WriteError);
     }
 
-    let entry = empty_entry.unwrap();
+    let entry = empty_entry.expect("checked is_some above");
     // Bootable     0       +1      1
     entry.set_bootable(false);
     // Start        1       +3      4

@@ -37,7 +37,7 @@ pub fn cd(args: Vec<&str>) {
             eprintln!("rush: cd: {}: No such file or directory", new_path);
             return;
         }
-        ret.unwrap()
+        ret.expect("checked is_err above")
     };
 
     // Change the directory to the new path

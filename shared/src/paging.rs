@@ -114,6 +114,9 @@ bitfield!(
     }
 );
 
+// 32-bit x86 specific: virtual addresses are 32 bits wide. Revisit for the
+// x86_64 port.
+#[allow(clippy::cast_possible_truncation)]
 fn virt_parts(virt_addr: usize) -> (usize, usize) {
     bitfield!(
         VirtualAddress, u32
@@ -217,6 +220,9 @@ impl<A: Allocator> PageManager<A> {
     /// This is still unsafe despite the requirement to call `load` because if
     /// there's nothing in the TLB for the virtual addresses included in this
     /// mapping, the mapping may take effect without the call to `load`.
+    // 32-bit x86 specific: addresses and frame numbers fit in u32 page table
+    // fields. Revisit for the x86_64 port.
+    #[allow(clippy::cast_possible_truncation)]
     pub unsafe fn map(&mut self, phys_addr: usize, virt_addr: usize, write: bool, user: bool) {
         unsafe {
             assert_eq!(
@@ -287,6 +293,9 @@ impl<A: Allocator> PageManager<A> {
     /// # Safety
     ///
     /// Same as `map`.
+    // 32-bit x86 specific: addresses and frame numbers fit in u32 page table
+    // fields. Revisit for the x86_64 port.
+    #[allow(clippy::cast_possible_truncation)]
     pub unsafe fn huge_map(&mut self, phys_addr: usize, virt_addr: usize, write: bool, user: bool) {
         unsafe {
             assert!(*PSE_ENABLED, "PSE was not enabled");
@@ -542,6 +551,9 @@ pub unsafe fn enable() {
     }
 }
 
+// FIXME: `as u8` truncates the bit-21 mask to 0; kept as-is in this lint-only
+// change.
+#[allow(clippy::cast_possible_truncation)]
 static PSE_SUPPORTED: LazyLock<bool> = LazyLock::new(|| {
     bitfield!(
         EFlags, u32{} { (id, 21) }

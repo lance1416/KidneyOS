@@ -62,13 +62,27 @@ impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for SleepMutexGuard<'a, T> {
 impl<'a, T: ?Sized> Deref for SleepMutexGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.as_ref().unwrap().data.get() }
+        unsafe {
+            &*self
+                .mutex
+                .as_ref()
+                .expect("guard holds its mutex")
+                .data
+                .get()
+        }
     }
 }
 
 impl<'a, T: ?Sized> DerefMut for SleepMutexGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.as_mut().unwrap().data.get() }
+        unsafe {
+            &mut *self
+                .mutex
+                .as_mut()
+                .expect("guard holds its mutex")
+                .data
+                .get()
+        }
     }
 }
 

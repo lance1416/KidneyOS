@@ -66,7 +66,7 @@ impl ProcessControlBlock {
         // open stdin, stdout, stderr
         root.open_standard_fds(pid);
         // TODO: inherit cwd from parent
-        let cwd = root.get_root().unwrap();
+        let cwd = root.get_root().expect("root filesystem is mounted");
         let mut vmas = VMAList::new();
         // set up stack
         // TODO: Handle stack section defined in the ELF file?
@@ -266,9 +266,9 @@ impl ThreadControlBlock {
         file_system: &mut RootFileSystem,
         state: &mut ProcessState,
     ) -> Self {
-        let entry = NonNull::new(eip as *mut u8).unwrap();
+        let entry = NonNull::new(eip as *mut u8).expect("function pointers are non-null");
 
-        let eip = NonNull::new(eip as *mut u8).unwrap();
+        let eip = NonNull::new(eip as *mut u8).expect("function pointers are non-null");
 
         let mut new_thread = Self::new(
             eip,

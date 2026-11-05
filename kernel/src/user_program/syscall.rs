@@ -34,6 +34,9 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
     // Translate between syscall names and numbers: https://x86.syscall.sh/
     match syscall_number {
         SYS_EXIT => {
+            // 32-bit x86 specific: reinterpret the register as the i32 exit
+            // status. Revisit for the x86_64 port.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
             process_functions::exit_process(arg0 as i32);
         }
         SYS_FORK => {
@@ -42,7 +45,7 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
         SYS_OPEN => open(arg0 as _, arg1),
         SYS_READ => read(arg0, arg1 as _, arg2 as _),
         SYS_WRITE => write(arg0, arg1 as _, arg2 as _),
-        SYS_LSEEK64 => lseek64(arg0, arg1 as _, arg2 as _),
+        SYS_LSEEK64 => lseek64(arg0, arg1 as _, arg2.cast_signed()),
         SYS_CLOSE => close(arg0),
         SYS_CHDIR => chdir(arg0 as _),
         SYS_GETCWD => getcwd(arg0 as _, arg1 as _),
@@ -59,6 +62,8 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
         SYS_MOUNT => mount(arg0 as _, arg1 as _, arg2 as _),
         SYS_SYNC => sync(),
         SYS_WAITPID => {
+            // Intentional: the pid argument is truncated to `Pid`.
+            #[allow(clippy::cast_possible_truncation)]
             let wait_pid = arg0 as Pid;
 
             if wait_pid == running_thread_pid() {
@@ -99,17 +104,19 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
             }
 
             let parent_pcb = pcb_ref.lock();
-            let exit_code = parent_pcb.exit_code.unwrap();
+            let exit_code = parent_pcb
+                .exit_code
+                .expect("loop only exits once exit_code is set");
             *status_ptr = (exit_code & 0xff) << 8;
 
             let parent_pid = parent_pcb.pid;
             system.process.table.remove(parent_pid);
 
-            parent_pid as isize
+            isize::try_from(parent_pid).expect("Pid fits in isize")
         }
-        SYS_DUP => dup(arg0 as _),
+        SYS_DUP => dup(arg0.cast_signed()),
         SYS_PIPE => pipe(arg0 as _),
-        SYS_DUP2 => dup2(arg0 as _, arg1 as _),
+        SYS_DUP2 => dup2(arg0.cast_signed(), arg1.cast_signed()),
         SYS_EXECVE => {
             let cstr = match unsafe { get_cstr_from_user_space(arg0 as *const u8) } {
                 Ok(cstr) => cstr,
@@ -135,11 +142,11 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
 
             scheduler_yield_and_die();
         }
-        SYS_GETPID => running_thread_pid() as isize,
+        SYS_GETPID => isize::try_from(running_thread_pid()).expect("Pid fits in isize"),
         SYS_NANOSLEEP => {
             todo!("nanosleep syscall")
         }
-        SYS_GETPPID => running_thread_ppid() as isize,
+        SYS_GETPPID => isize::try_from(running_thread_ppid()).expect("Pid fits in isize"),
         SYS_SCHED_YIELD => {
             scheduler_yield_and_continue();
             0

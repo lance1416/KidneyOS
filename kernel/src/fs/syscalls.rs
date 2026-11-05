@@ -57,7 +57,7 @@ pub fn read(fd: usize, buf: *mut u8, count: usize) -> isize {
     };
     match RootFileSystem::read(root_filesystem(), fd, buf) {
         Err(e) => -e.to_isize(),
-        Ok(n) => n as isize,
+        Ok(n) => n.cast_signed(),
     }
 }
 
@@ -76,7 +76,7 @@ pub fn write(fd: usize, buf: *const u8, count: usize) -> isize {
     };
     match RootFileSystem::write(root_filesystem(), fd, buf) {
         Err(e) => -e.to_isize(),
-        Ok(n) => n as isize,
+        Ok(n) => n.cast_signed(),
     }
 }
 
@@ -87,6 +87,9 @@ pub fn lseek64(fd: usize, offset: *mut i64, whence: isize) -> isize {
     let Ok(fd) = FileDescriptor::try_from(fd) else {
         return -EBADF;
     };
+    // 32-bit x86 specific: isize and i32 are the same width. Revisit for the
+    // x86_64 port.
+    #[allow(clippy::cast_possible_truncation)]
     let whence = match whence as i32 {
         SEEK_SET => SeekFrom::Start,
         SEEK_CUR => SeekFrom::Current,
@@ -231,7 +234,7 @@ pub fn getdents(fd: usize, output: *mut Dirent, size: usize) -> isize {
     let Ok(fd) = FileDescriptor::try_from(fd) else {
         return -EBADF;
     };
-    if unsafe { get_mut_slice_from_user_space(output as *mut u8, size) }.is_none() {
+    if unsafe { get_mut_slice_from_user_space(output.cast::<u8>(), size) }.is_none() {
         return -EFAULT;
     }
     let fd = ProcessFileDescriptor {
@@ -240,7 +243,7 @@ pub fn getdents(fd: usize, output: *mut Dirent, size: usize) -> isize {
     };
     // SAFETY: just checked that output..output + size is valid above
     match unsafe { root_filesystem().lock().getdents(fd, output, size) } {
-        Ok(n) => n as isize,
+        Ok(n) => n.cast_signed(),
         Err(e) => -e.to_isize(),
     }
 }
@@ -461,7 +464,7 @@ pub fn mmap(
     let length = length.div_ceil(PAGE_FRAME_SIZE) * PAGE_FRAME_SIZE;
     let mut root = root_filesystem().lock();
     match root.mmap_file(addr, fd, length, offset, (prot & PROT_WRITE) != 0) {
-        Ok(true) => addr as isize,
+        Ok(true) => addr.cast_signed(),
         Ok(false) => {
             // TODO: figure out an address range that is free
             -ENOMEM
