@@ -1,9 +1,9 @@
-use nom::IResult;
 use nom::bytes::complete::{tag, take};
 use nom::combinator::{map_opt, verify};
 use nom::error::Error;
 use nom::number::Endianness;
 use nom::number::complete::{u8, u16, u32};
+use nom::{IResult, Parser};
 
 use alloc::vec::Vec;
 
@@ -79,24 +79,25 @@ pub struct ElfHeader {
 
 impl ElfHeader {
     pub fn parse(bytes: &[u8]) -> IResult<&[u8], ElfHeader> {
-        let (bytes, _) = tag([0x7F, b'E', b'L', b'F'])(bytes)?;
+        let (bytes, _) = tag(&b"\x7FELF"[..]).parse(bytes)?;
 
         // Elf Bit Width, we don't parse 64-bits ELF binaries.
-        let (bytes, _) = tag([1])(bytes)?;
+        let (bytes, _) = tag(&[1u8][..]).parse(bytes)?;
 
         // Endianness seems to reflect the endianness of the fields, not only the architecture
         let (bytes, endianness) = map_opt(u8, |value| match value {
             1 => Some(ElfEndianness::Little),
             2 => Some(ElfEndianness::Big),
             _ => None,
-        })(bytes)?;
+        })
+        .parse(bytes)?;
 
         let endian = endianness.to_nom();
 
         let (bytes, header_version) = u8(bytes)?;
         let (bytes, abi) = u8(bytes)?;
 
-        let (bytes, _) = take(8usize)(bytes)?;
+        let (bytes, _) = take(8usize).parse(bytes)?;
 
         let (bytes, usage) = map_opt(u16(endian), |value| match value {
             1 => Some(ElfUsage::Relocatable),
@@ -104,7 +105,8 @@ impl ElfHeader {
             3 => Some(ElfUsage::Shared),
             4 => Some(ElfUsage::Core),
             _ => None,
-        })(bytes)?;
+        })
+        .parse(bytes)?;
 
         let (bytes, architecture) = map_opt(u16(endian), |value| match value {
             0x00 => Some(ElfArchitecture::Generic),
@@ -118,21 +120,22 @@ impl ElfHeader {
             0xB7 => Some(ElfArchitecture::Arm64),
             0xF3 => Some(ElfArchitecture::RiscV),
             _ => None, // Could be Some(ElfArchitecture::Generic)
-        })(bytes)?;
+        })
+        .parse(bytes)?;
 
-        let (bytes, elf_version) = u32(endian)(bytes)?;
-        let (bytes, program_entry) = u32(endian)(bytes)?;
-        let (bytes, program_headers_offset) = u32(endian)(bytes)?;
-        let (bytes, section_headers_offset) = u32(endian)(bytes)?;
+        let (bytes, elf_version) = u32(endian).parse(bytes)?;
+        let (bytes, program_entry) = u32(endian).parse(bytes)?;
+        let (bytes, program_headers_offset) = u32(endian).parse(bytes)?;
+        let (bytes, section_headers_offset) = u32(endian).parse(bytes)?;
 
-        let (bytes, flags) = u32(endian)(bytes)?;
+        let (bytes, flags) = u32(endian).parse(bytes)?;
 
-        let (bytes, elf_header_size) = u16(endian)(bytes)?;
-        let (bytes, program_header_entry_size) = u16(endian)(bytes)?;
-        let (bytes, program_header_count) = u16(endian)(bytes)?;
-        let (bytes, section_header_entry_size) = u16(endian)(bytes)?;
-        let (bytes, section_header_count) = u16(endian)(bytes)?;
-        let (bytes, section_header_index) = u16(endian)(bytes)?;
+        let (bytes, elf_header_size) = u16(endian).parse(bytes)?;
+        let (bytes, program_header_entry_size) = u16(endian).parse(bytes)?;
+        let (bytes, program_header_count) = u16(endian).parse(bytes)?;
+        let (bytes, section_header_entry_size) = u16(endian).parse(bytes)?;
+        let (bytes, section_header_count) = u16(endian).parse(bytes)?;
+        let (bytes, section_header_index) = u16(endian).parse(bytes)?;
 
         Ok((
             bytes,
@@ -220,23 +223,24 @@ impl<'a> ElfProgramHeader<'a> {
             6 => Some(ElfProgramType::ProgramHeaderTable),
             0x60000000.. => Some(ElfProgramType::OsSpecific(value)), // OS Specific Headers
             _ => None,
-        })(bytes)?;
+        })
+        .parse(bytes)?;
 
-        let (bytes, file_offset) = u32(endian)(bytes)?;
-        let (bytes, virtual_address) = u32(endian)(bytes)?;
-        let (bytes, physical_address) = u32(endian)(bytes)?;
-        let (bytes, file_size) = u32(endian)(bytes)?;
+        let (bytes, file_offset) = u32(endian).parse(bytes)?;
+        let (bytes, virtual_address) = u32(endian).parse(bytes)?;
+        let (bytes, physical_address) = u32(endian).parse(bytes)?;
+        let (bytes, file_size) = u32(endian).parse(bytes)?;
         // Protection, to make sure we map enough memory to contain the file data.
-        let (bytes, memory_size) = verify(u32(endian), |size| file_size <= *size)(bytes)?;
-        let (bytes, flags) = u32(endian)(bytes)?;
-        let (bytes, alignment) = u32(endian)(bytes)?;
+        let (bytes, memory_size) = verify(u32(endian), |size| file_size <= *size).parse(bytes)?;
+        let (bytes, flags) = u32(endian).parse(bytes)?;
+        let (bytes, alignment) = u32(endian).parse(bytes)?;
 
         let executable = flags & 1 != 0;
         let writable = flags & 2 != 0;
         let readable = flags & 4 != 0;
 
-        let (data_start, _) = take(file_offset)(full_file)?;
-        let (_, data) = take(file_size)(data_start)?;
+        let (data_start, _) = take(file_offset).parse(full_file)?;
+        let (_, data) = take(file_size).parse(data_start)?;
 
         Ok((
             bytes,
@@ -270,7 +274,8 @@ impl<'a> Elf<'a> {
     pub fn parse(full_bytes: &'a [u8]) -> IResult<&'a [u8], Elf<'a>> {
         let (bytes, header) = ElfHeader::parse(full_bytes)?;
 
-        let (mut program_header_bytes, _) = take(header.program_headers_offset)(full_bytes)?;
+        let (mut program_header_bytes, _) =
+            take(header.program_headers_offset).parse(full_bytes)?;
 
         let mut program_headers = Vec::with_capacity(header.program_header_count as usize);
 
@@ -283,7 +288,7 @@ impl<'a> Elf<'a> {
 
             program_headers.push(program_header);
 
-            let (next, _) = take(header.program_header_entry_size)(program_header_bytes)?;
+            let (next, _) = take(header.program_header_entry_size).parse(program_header_bytes)?;
 
             program_header_bytes = next;
         }
