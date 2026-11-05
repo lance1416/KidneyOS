@@ -1,131 +1,34 @@
 pub mod frames;
-pub mod pool_allocator;
 pub mod regions;
 
 use crate::sizes::{KB, MB};
 
 // Page size is 4KB. This is a property of x86 processors.
 pub const PAGE_FRAME_SIZE: usize = 4 * KB;
-#[cfg(target_arch = "x86")]
-pub const HUGE_PAGE_SIZE: usize = 4 * MB;
-#[cfg(target_arch = "x86_64")]
 pub const HUGE_PAGE_SIZE: usize = 2 * MB;
 
-// The `phys` and `virt` linker symbols are i686 only; the x86_64 kernel
-// declares its own (see build-support/x86_64.ld).
+// Layout of the virtual address space. The kernel's own symbols (the kernel
+// image's sections) are declared where they're used, see
+// build-support/x86_64.ld.
 
-#[cfg(target_arch = "x86")]
-macro_rules! linker_offsets {
-    ($($name:ident),*) => {
-        $(
-        #[inline]
-        pub fn $name() -> usize {
-            unsafe extern "C" {
-                static $name: u8;
-            }
-
-            // The linker script will give this the correct address.
-            &raw const $name as usize
-        }
-        )*
-    }
-}
-
-#[cfg(target_arch = "x86")]
-pub mod phys {
-    linker_offsets!(trampoline_start, trampoline_data_start, trampoline_end);
-
-    macro_rules! to_phys {
-        ($($name:ident),*) => {
-            $(
-            #[inline]
-            pub fn $name() -> usize {
-                super::virt::$name() - super::KERNEL_BASE
-            }
-            )*
-        }
-    }
-
-    to_phys!(kernel_start, kernel_data_start, kernel_end);
-
-    #[inline]
-    pub fn main_stack_top() -> usize {
-        kernel_end() + super::MAIN_STACK_SIZE
-    }
-
-    #[inline]
-    pub fn trampoline_heap_top() -> usize {
-        main_stack_top() + super::TRAMPOLINE_HEAP_SIZE
-    }
-}
-
-#[cfg(target_arch = "x86")]
-pub mod virt {
-    linker_offsets!(kernel_start, kernel_data_start, kernel_end);
-
-    /// The main stack directly follows the kernel image, so it is mapped
-    /// relative to it.
-    #[inline]
-    pub fn main_stack_top() -> usize {
-        super::phys::main_stack_top() + super::KERNEL_BASE
-    }
-
-    /// Memory from here on is accessed through the direct map of physical
-    /// memory.
-    #[inline]
-    pub fn trampoline_heap_top() -> usize {
-        super::phys::trampoline_heap_top() + super::PHYS_MAP_OFFSET
-    }
-}
-
-// Layout of the virtual address space. On i686 all three coincide: user space
-// is everything below 2GiB, and the kernel image as well as the direct map of
-// physical memory both start at 2GiB (so physical address `p` of the kernel
-// image is mapped at `p + 0x80000000`, like every other physical address).
-
-/// Virtual address that physical address 0 of the kernel image is linked at:
-/// the image (loaded at its physical address by the bootloader) lives at
-/// `phys + KERNEL_BASE`. Must match `KERNEL_BASE` in `build-support/i686.ld`.
-#[cfg(target_arch = "x86")]
-pub const KERNEL_BASE: usize = 0x8000_0000;
-
-/// On x86_64 the kernel image is linked in the top 2GiB of the address space
-/// (as required by the kernel code model), and the boot stub maps physical
+/// The kernel image is linked in the top 2GiB of the address space (as
+/// required by the kernel code model), and the boot stub maps physical
 /// `0..1GiB` there, so physical address `p < 1GiB` is also accessible at
 /// `p + KERNEL_BASE`. Must match `KERNEL_BASE` in `build-support/x86_64.ld`.
-#[cfg(target_arch = "x86_64")]
 pub const KERNEL_BASE: usize = 0xFFFF_FFFF_8000_0000;
 
 /// Virtual address of the start of the direct map of physical memory: the
 /// physical address `p` is accessible at `p + PHYS_MAP_OFFSET`. Memory handed
 /// out by the frame and kernel allocators is addressed through it.
-#[cfg(target_arch = "x86")]
-pub const PHYS_MAP_OFFSET: usize = 0x8000_0000;
-
-/// On x86_64 the direct map starts at the beginning of the higher half (PML4
-/// entry 256) and covers all physical memory in the multiboot2 memory map.
-/// Until the kernel has its own page tables, the boot stub maps physical
-/// `0..1GiB` here.
-#[cfg(target_arch = "x86_64")]
+///
+/// The direct map starts at the beginning of the higher half (PML4 entry 256)
+/// and covers all physical memory in the multiboot2 memory map. Until the
+/// kernel has its own page tables, the boot stub maps physical `0..1GiB` here.
 pub const PHYS_MAP_OFFSET: usize = 0xFFFF_8000_0000_0000;
 
-/// Exclusive upper bound of user virtual addresses. Any virtual address at or
-/// above it is a kernel address.
-#[cfg(target_arch = "x86")]
-pub const USER_TOP: usize = 0x8000_0000;
-
-/// On x86_64, user space is the lower canonical half. Checks of user pointers
-/// must compare against this first: addresses between it and the higher half
-/// are not canonical, and the page tables say nothing about them.
-#[cfg(target_arch = "x86_64")]
+/// Exclusive upper bound of user virtual addresses: user space is the lower
+/// canonical half. Checks of user pointers must compare against this first:
+/// addresses between it and the higher half are not canonical, and the page
+/// tables say nothing about them.
 pub const USER_TOP: usize = 0x0000_8000_0000_0000;
-#[cfg(target_arch = "x86_64")]
-const _: () = assert!(USER_TOP as u64 == crate::paging::x86_64::USER_TOP);
-
-// TODO: Figure out how to detect kernel stack overflows.
-pub const MAIN_STACK_SIZE: usize = 2 * MB;
-pub const TRAMPOLINE_HEAP_SIZE: usize = 8 * MB;
-
-// TODO: We currently leave 8MB for the bootstrap allocator. This should be
-// re-evaluated later.
-pub const BOOTSTRAP_ALLOCATOR_SIZE: usize = 8 * MB;
+const _: () = assert!(USER_TOP as u64 == crate::paging::USER_TOP);

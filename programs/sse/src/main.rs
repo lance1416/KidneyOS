@@ -9,8 +9,7 @@
 //! computation's state for most of it. Run two of these at the same time
 //! (`KIDNEYOS_INIT=sse,sse`): each is preempted many times during a
 //! computation, and starts from its own pid, so if the other process's
-//! registers leaked into it, its results would differ. (On i686, programs use
-//! the x87 FPU, which the kernel doesn't save, so this is for x86_64 only.)
+//! registers leaked into it, its results would differ.
 
 use core::hint::black_box;
 

@@ -3,8 +3,7 @@
 //! `boot.s` takes the CPU from the multiboot2 entry into long mode in the
 //! higher half, and [`kmain`] sets up the descriptor tables ([`gdt`], [`idt`])
 //! and page tables ([`paging`]) before starting the architecture-independent
-//! kernel. The items below are what the rest of the kernel uses, like those of
-//! the i686 module. Entering user mode isn't supported yet.
+//! kernel. The items below are what the rest of the kernel uses.
 //!
 //! Only the parts that make sense in a host process are built for the host
 //! tests (`target_os` other than "none").

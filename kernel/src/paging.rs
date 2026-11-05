@@ -8,18 +8,6 @@ pub trait PageManagerDefault {
     fn default() -> Self;
 }
 
-#[cfg(target_arch = "x86")]
-impl PageManagerDefault for PageManager<Global> {
-    fn default() -> Self {
-        PageManager::from_mapping_ranges_in(
-            paging::kernel_mapping_ranges(),
-            Global,
-            PHYS_MAP_OFFSET,
-        )
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
 impl PageManagerDefault for PageManager<Global> {
     fn default() -> Self {
         // The kernel heap is in the direct map.
@@ -33,15 +21,6 @@ impl PageManagerDefault for PageManager<Global> {
         unsafe {
             crate::arch::share_kernel_half(&mut page_manager)
         };
-        page_manager
-    }
-}
-
-#[cfg(target_arch = "x86")]
-pub unsafe fn enable() -> PageManager {
-    unsafe {
-        let page_manager = PageManager::default();
-        page_manager.load();
         page_manager
     }
 }

@@ -40,18 +40,9 @@ pub unsafe fn inb(port: u16) -> u8 {
 /// * The caller must ensure that the port is a valid port to read from.
 /// * They also need to ensure the buffer is valid and has enough space to store the data.
 pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
-    // `rep insw` writes to [edi]/[rdi], counting down ecx/rcx; the direction
-    // flag is clear, as the ABI requires.
+    // `rep insw` writes to [rdi], counting down rcx; the direction flag is
+    // clear, as the ABI requires.
     unsafe {
-        #[cfg(target_arch = "x86")]
-        asm!(
-            "rep insw",
-            in("dx") port,
-            inout("edi") buffer => _,
-            inout("ecx") count => _,
-            options(nostack, preserves_flags),
-        );
-        #[cfg(target_arch = "x86_64")]
         asm!(
             "rep insw",
             in("dx") port,
@@ -71,21 +62,8 @@ pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
 /// The caller must ensure that the port is a valid port to write to.
 /// They also need to ensure the buffer is valid and has appropriate size to write to the port.
 pub unsafe fn outsw(port: u16, buffer: *const u8, count: usize) {
-    // `rep outsw` reads from [esi]/[rsi], counting down ecx/rcx.
+    // `rep outsw` reads from [rsi], counting down rcx.
     unsafe {
-        // LLVM reserves esi on i686, so it can't be an operand: swap the
-        // buffer into it and back.
-        #[cfg(target_arch = "x86")]
-        asm!(
-            "xchg esi, {buffer}",
-            "rep outsw",
-            "xchg esi, {buffer}",
-            buffer = inout(reg) buffer => _,
-            in("dx") port,
-            inout("ecx") count => _,
-            options(nostack, preserves_flags, readonly),
-        );
-        #[cfg(target_arch = "x86_64")]
         asm!(
             "rep outsw",
             in("dx") port,

@@ -301,7 +301,7 @@ fn system_call(frame: &mut TrapFrame) {
     frame.rax = result as u64;
 }
 
-/// Handles IRQ `irq`, like the i686 interrupt handlers do.
+/// Handles IRQ `irq`: the timer, the keyboard and the disks.
 fn irq(irq: u8) {
     match irq {
         0 => {

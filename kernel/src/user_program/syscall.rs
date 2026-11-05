@@ -34,8 +34,8 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
     // Translate between syscall names and numbers: https://x86.syscall.sh/
     match syscall_number {
         SYS_EXIT => {
-            // 32-bit x86 specific: reinterpret the register as the i32 exit
-            // status. Revisit for the x86_64 port.
+            // The exit status is an int in C, which the stubs pass
+            // sign-extended, so truncating the register gets it back.
             #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
             process_functions::exit_process(arg0 as i32);
         }

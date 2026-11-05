@@ -1,4 +1,3 @@
-#![feature(slice_ptr_get)]
 #![no_std]
 
 pub mod bit_array;
@@ -7,18 +6,10 @@ pub mod bit_array;
 #[doc(hidden)]
 pub use pastey as __pastey;
 
-// The descriptor tables have a different layout in long mode; the x86_64
-// kernel has its own (kernel/src/arch/x86_64).
-#[cfg(target_arch = "x86")]
-pub mod global_descriptor_table;
 pub mod macros;
 pub mod mem;
 pub mod multiboot2;
 pub mod paging;
-#[cfg(target_arch = "x86")]
-pub mod segment;
 pub mod serial;
 pub mod sizes;
-#[cfg(target_arch = "x86")]
-pub mod task_state_segment;
 pub mod video_memory;

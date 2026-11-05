@@ -19,8 +19,6 @@ use core::{
 };
 use dummy_allocator::DummyAllocatorSolution;
 use frame_allocator::{CoreMapEntry, FrameAllocatorSolution, placement_algorithms::NextFit};
-#[cfg(target_arch = "x86")]
-use kidneyos_shared::mem::{BOOTSTRAP_ALLOCATOR_SIZE, virt::trampoline_heap_top};
 use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET};
 use subblock_allocator::SubblockAllocatorSolution;
 
@@ -99,20 +97,11 @@ impl KernelAllocator {
         };
 
         // The exclusive max address is the end of the region in the direct map.
-        // On i686 the direct map ends at the top of the address space, so
-        // this saturates rather than overflowing; the caller clamps `memory`
-        // to it. On x86_64 it can't overflow.
-        let frames_ceil_address = PHYS_MAP_OFFSET.saturating_add(memory.end);
+        let frames_ceil_address = PHYS_MAP_OFFSET + memory.end;
 
-        // On i686, the trampoline's heap follows the kernel, and may be in
-        // the region. On x86_64, the region is the largest one of the boot
-        // frame allocator (see RegionFrameAllocator::take_largest), which
-        // excludes everything in use already.
-        // TODO: Do we still need to add the BOOTSTRAP_ALLOCATOR_SIZE
-        #[cfg(target_arch = "x86")]
-        let frames_base_address = (trampoline_heap_top() + BOOTSTRAP_ALLOCATOR_SIZE)
-            .max(PHYS_MAP_OFFSET.saturating_add(memory.start));
-        #[cfg(target_arch = "x86_64")]
+        // The region is the largest one of the boot frame allocator (see
+        // RegionFrameAllocator::take_largest), which excludes everything in
+        // use already.
         let frames_base_address = PHYS_MAP_OFFSET + memory.start;
         assert!(
             frames_base_address < frames_ceil_address,

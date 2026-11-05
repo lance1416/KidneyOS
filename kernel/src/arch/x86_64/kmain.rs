@@ -1,7 +1,7 @@
 //! The Rust entry point of the x86_64 kernel.
 
 use super::{
-    disable_interrupts, gdt, halt_forever,
+    gdt,
     idt::{self, TrapFrame},
     paging::{self, phys_to_virt},
 };
@@ -14,11 +14,9 @@ use crate::{
 };
 use core::{
     hint::spin_loop,
-    panic::PanicInfo,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use kidneyos_shared::{
-    eprintln,
     mem::regions::PhysRegion,
     multiboot2::{EXPECTED_MAGIC, Info, InfoTag},
     println,
@@ -26,7 +24,7 @@ use kidneyos_shared::{
     video_memory::video_memory_writer,
 };
 
-/// Set at build time with `make ARCH=x86_64 KIDNEYOS_TEST=...` to run one of
+/// Set at build time with `make KIDNEYOS_TEST=...` to run one of
 /// the tests below while booting.
 const TEST: Option<&str> = option_env!("KIDNEYOS_TEST");
 
@@ -232,11 +230,4 @@ extern "C" fn preemption_test() -> i32 {
     }
     intr_enable();
     0
-}
-
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    disable_interrupts();
-    eprintln!("KidneyOS x86_64 panic: {info}");
-    halt_forever()
 }

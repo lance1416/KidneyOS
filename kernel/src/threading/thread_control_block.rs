@@ -24,19 +24,12 @@ use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, USER_TOP};
 // The stack size choice is based on that of x86-64 Linux and 32-bit Windows
 // Linux: https://docs.kernel.org/next/x86/kernel-stacks.html
 // Windows: https://techcommunity.microsoft.com/t5/windows-blog-archive/pushing-the-limits-of-windows-processes-and-threads/ba-p/723824
-#[cfg(target_arch = "x86")]
-pub const KERNEL_THREAD_STACK_FRAMES: usize = 2;
-// Pointers and saved registers are twice as large.
-#[cfg(target_arch = "x86_64")]
 pub const KERNEL_THREAD_STACK_FRAMES: usize = 4;
 const KERNEL_THREAD_STACK_SIZE: usize = KERNEL_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
 pub const USER_THREAD_STACK_FRAMES: usize = 4 * 1024;
 pub const USER_THREAD_STACK_SIZE: usize = USER_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
-#[cfg(target_arch = "x86")]
-pub const USER_STACK_BOTTOM_VIRT: usize = 0x100000;
-/// On x86_64 the stack is at the top of the user half, ending at the last page
-/// below the non-canonical hole.
-#[cfg(target_arch = "x86_64")]
+/// The stack is at the top of the user half, ending at the last page below the
+/// non-canonical hole.
 pub const USER_STACK_BOTTOM_VIRT: usize = 0x7FFF_FFFF_F000 - USER_THREAD_STACK_SIZE;
 /// Where the user stack pointer starts: the top of the stack, which is
 /// 16-byte aligned as the System V ABI requires at the entry point.
@@ -161,13 +154,9 @@ impl ThreadControlBlock {
             return Err(ThreadElfCreateError::NotExecutable);
         }
 
-        // Programs for this architecture only: 32-bit x86 ELFs on i686, 64-bit
-        // x86-64 ones on x86_64.
-        #[cfg(target_arch = "x86")]
-        let expected = (ElfClass::Elf32, ElfArchitecture::X86);
-        #[cfg(target_arch = "x86_64")]
-        let expected = (ElfClass::Elf64, ElfArchitecture::X8664);
-        if (elf.header.class, elf.header.architecture) != expected {
+        // Only 64-bit x86-64 programs.
+        if (elf.header.class, elf.header.architecture) != (ElfClass::Elf64, ElfArchitecture::X8664)
+        {
             return Err(ThreadElfCreateError::UnsupportedArchitecture);
         }
 
@@ -235,17 +224,8 @@ impl ThreadControlBlock {
 
                 // Map the physical address obtained by the allocation above to the
                 // virtual address assigned by the ELF header.
-                #[cfg(target_arch = "x86")]
-                page_manager.map_range(
-                    phys_addr,
-                    segment_virtual_start,
-                    frames * PAGE_FRAME_SIZE,
-                    program_header.writable,
-                    true,
-                );
                 // W^X: only read-only segments marked executable (normally
                 // .text) can be executed.
-                #[cfg(target_arch = "x86_64")]
                 page_manager.map_range_flags(
                     phys_addr,
                     segment_virtual_start,
@@ -410,8 +390,7 @@ impl ThreadControlBlock {
             .as_ptr()
             .cast::<T>();
         // The stack is page aligned, and everything pushed has a size that is
-        // a multiple of its alignment (which i686's packed contexts don't
-        // have).
+        // a multiple of its alignment.
         assert!(slot.is_aligned(), "misaligned kernel stack pointer");
         // SAFETY: The slot was just allocated on this thread's stack.
         unsafe { slot.write(value) };

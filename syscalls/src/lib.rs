@@ -35,33 +35,15 @@ macro_rules! entry_point {
     };
 }
 
-/// The `int 0x80` system call instruction, for each architecture.
+/// The `int 0x80` system call instruction.
 ///
-/// The system call number goes in eax/rax, the arguments in ebx, ecx, edx on
-/// i686 and rdi, rsi, rdx (then r10, r8, r9) on x86_64, and the result comes
-/// back in eax/rax. The kernel preserves every other register.
+/// The system call number goes in rax, the arguments in rdi, rsi, rdx (then
+/// r10, r8, r9, as in the System V ABI), and the result comes back in rax.
+/// The kernel preserves every other register.
 #[cfg(feature = "stubs")]
 mod raw {
     use core::arch::asm;
 
-    #[cfg(target_arch = "x86")]
-    pub unsafe fn syscall3(number: usize, arg0: usize, arg1: usize, arg2: usize) -> isize {
-        let result;
-        unsafe {
-            asm!(
-                "int 0x80",
-                inlateout("eax") number => result,
-                in("ebx") arg0,
-                in("ecx") arg1,
-                in("edx") arg2,
-            );
-        }
-        result
-    }
-
-    // rbx can't be an inline asm operand on x86_64 (LLVM uses it), which is
-    // one reason the x86_64 ABI uses the System V argument registers.
-    #[cfg(target_arch = "x86_64")]
     pub unsafe fn syscall3(number: usize, arg0: usize, arg1: usize, arg2: usize) -> isize {
         let result;
         unsafe {
@@ -88,12 +70,6 @@ mod raw {
         unsafe { syscall3(number, 0, 0, 0) }
     }
 
-    #[cfg(target_arch = "x86")]
-    pub unsafe fn exit(code: i32) -> ! {
-        unsafe { asm!("int 0x80", in("eax") super::SYS_EXIT, in("ebx") code, options(noreturn)) }
-    }
-
-    #[cfg(target_arch = "x86_64")]
     pub unsafe fn exit(code: i32) -> ! {
         unsafe {
             asm!(
@@ -173,8 +149,8 @@ mod stubs {
         result_i32(unsafe { syscall1(SYS_CLOSE, arg_i32(fd)) })
     }
 
-    // The offset is passed by pointer (and updated in place), since it doesn't
-    // fit in a register on i686.
+    // The offset is passed by pointer (and updated in place), as on i686
+    // (where it didn't fit in a register), which KidneyOS used to run on.
     #[unsafe(no_mangle)]
     pub extern "C" fn lseek64(fd: i32, offset: i64, whence: i32) -> i64 {
         let mut offset = offset;
@@ -239,8 +215,8 @@ mod stubs {
         result_i32(unsafe { syscall3(SYS_GETDENTS, arg_i32(fd), output as usize, size) })
     }
 
-    // The size is passed in two halves, since it doesn't fit in a register on
-    // i686.
+    // The size is passed in two halves, as on i686 (where it didn't fit in a
+    // register), which KidneyOS used to run on.
     #[unsafe(no_mangle)]
     pub extern "C" fn ftruncate(fd: i32, size: u64) -> i32 {
         #[allow(clippy::cast_possible_truncation)]
@@ -344,8 +320,8 @@ mod stubs {
         result_i32(unsafe { syscall3(SYS_GETRANDOM, buf as usize, size, flags) })
     }
 
-    // The six arguments are passed in a struct (by pointer), on every
-    // architecture, since i686 doesn't have enough registers for them.
+    // The six arguments are passed in a struct (by pointer), as on i686 (which
+    // didn't have enough registers for them), which KidneyOS used to run on.
     #[unsafe(no_mangle)]
     pub extern "C" fn mmap(
         addr: *mut c_void,

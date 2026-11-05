@@ -49,8 +49,6 @@ pub fn init_system(state: SystemState) {
 }
 
 /// Whether [`init_system`] has finished, so that [`unwrap_system`] can be used.
-// Only the x86_64 interrupt dispatcher needs to check.
-#[cfg_attr(target_arch = "x86", allow(dead_code))]
 pub fn system_initialized() -> bool {
     SYSTEM_STATE.load(core::sync::atomic::Ordering::Acquire) == INITIALIZED
 }

@@ -2,18 +2,15 @@
 //!
 //! https://wiki.osdev.org/Paging#64-Bit_Paging
 //!
-//! This module is built on every target so that it can be unit tested on the
-//! 32-bit test host; only [`PageManager::load`] and [`PageManager::is_loaded`]
-//! touch the CPU: they only exist on x86_64 (where the host tests mustn't
-//! call them), and dropping only checks that the page tables aren't loaded in
-//! the kernel. For the same reason, addresses are `u64` rather than `usize`.
-//!
-//! The API mirrors the i686 `PageManager`. The differences:
+//! The page tables are unit tested on the (x86_64 Linux) test host: only
+//! [`PageManager::load`] and [`PageManager::is_loaded`] touch the CPU, which
+//! the tests mustn't call, and dropping only checks that the page tables
+//! aren't loaded in the kernel.
 //!
 //! - Pages can be non-executable (the NX bit). `map`, `map_range` and friends,
-//!   which only take `write` and `user` like on i686, map writable pages as
-//!   non-executable and read-only pages as executable ("W^X"); the `*_flags`
-//!   variants take explicit [`PageFlags`].
+//!   which only take `write` and `user`, map writable pages as non-executable
+//!   and read-only pages as executable ("W^X"); the `*_flags` variants take
+//!   explicit [`PageFlags`].
 //! - Huge pages are 2MiB, and need both addresses to be 2MiB aligned.
 //! - [`PageManager::can_access`] rejects user accesses at or above [`USER_TOP`]
 //!   and non-canonical addresses before looking at the page tables.
@@ -225,13 +222,11 @@ impl<A: Allocator> PageManager<A> {
     /// Swapping from the previously loaded page tables to these must not cause
     /// any existing pointers (including the stack, the code being run and the
     /// descriptor tables) to refer to anything they shouldn't.
-    #[cfg(target_arch = "x86_64")]
     pub unsafe fn load(&self) {
         unsafe { core::arch::asm!("mov cr3, {}", in(reg) self.root_phys(), options(nostack)) };
     }
 
     /// Returns whether these page tables are loaded.
-    #[cfg(target_arch = "x86_64")]
     pub fn is_loaded(&self) -> bool {
         let cr3: u64;
         unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack)) };
@@ -609,7 +604,7 @@ impl<A: Allocator> PageManager<A> {
             let next = self.allocate_table();
             self.phys_of(next)
         };
-        // Like on i686, an access must be allowed at every level, so the upper
+        // An access must be allowed at every level, so the upper
         // levels allow anything a mapping below them needs. Execution is only
         // restricted in the last level.
         let allowed = PageFlags {
@@ -643,7 +638,7 @@ impl<A: Allocator> PageManager<A> {
 
 impl<A: Allocator> Drop for PageManager<A> {
     fn drop(&mut self) {
-        #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+        #[cfg(target_os = "none")]
         assert!(!self.is_loaded(), "page manager dropped while still loaded");
         self.free_table(self.root, 4);
     }
