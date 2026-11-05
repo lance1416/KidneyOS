@@ -2,8 +2,7 @@ use core::arch::asm;
 
 use crate::drivers::ata::ata_interrupt;
 use crate::drivers::input::keyboard;
-use crate::interrupts::{intr_enable, pic, timer};
-use crate::system::running_process;
+use crate::interrupts::{handlers, pic, timer};
 use crate::threading::scheduling;
 use crate::user_program::syscall;
 
@@ -13,33 +12,19 @@ use crate::user_program::syscall;
 
 #[unsafe(naked)]
 pub unsafe extern "C" fn unhandled_handler() -> ! {
-    fn inner() -> ! {
-        panic!("unhandled interrupt");
-    }
-
     core::arch::naked_asm!(
         "call {}",
-        sym inner,
+        sym handlers::unhandled,
     )
 }
 
 #[unsafe(naked)]
 pub unsafe extern "C" fn page_fault_handler() -> ! {
-    unsafe fn inner(error_code: u32, return_eip: usize) {
-        unsafe {
-            let vaddr: usize;
-            asm!("mov {}, cr2", out(reg) vaddr);
-            // important: re-enable interrupts before acquiring lock to prevent deadlock
-            intr_enable();
-            let pcb = running_process();
-            let pcb = pcb.lock();
-            // try checking for a VMA matching this address
-            if !pcb.vmas.install_pte(vaddr) {
-                panic!(
-                    "page fault with error code {error_code:#b} occurred when trying to access {vaddr:#X} from instruction at {return_eip:#X}"
-                );
-            }
-        }
+    extern "C" fn inner(error_code: u32, return_eip: usize) {
+        let vaddr: usize;
+        // SAFETY: cr2 holds the address of the most recent page fault.
+        unsafe { asm!("mov {}, cr2", out(reg) vaddr) };
+        handlers::page_fault(vaddr, error_code, return_eip);
     }
 
     core::arch::naked_asm!(
@@ -64,17 +49,11 @@ pub unsafe extern "C" fn page_fault_handler() -> ! {
 
 #[unsafe(naked)]
 pub unsafe extern "C" fn general_protection_fault_handler() -> ! {
-    unsafe fn inner(error_code: u32, return_eip: usize) -> ! {
-        panic!(
-            "general protection fault with error code {error_code:#b} occurred from instruction at {return_eip:#X}"
-        );
-    }
-
     core::arch::naked_asm!(
         "
         call {}
         ",
-        sym inner,
+        sym handlers::general_protection_fault,
     )
 }
 

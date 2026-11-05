@@ -4,6 +4,7 @@
 // Only used by the buddy allocator tests.
 #![cfg_attr(test, feature(btreemap_alloc, slice_ptr_get))]
 
+mod arch;
 mod block;
 mod drivers;
 pub mod fs;
@@ -29,7 +30,7 @@ use crate::system::SystemState;
 use crate::threading::process::create_process_state;
 use crate::threading::thread_control_block::ThreadControlBlock;
 use alloc::boxed::Box;
-use interrupts::{idt, pic};
+use interrupts::pic;
 use kidneyos_shared::{global_descriptor_table, println, video_memory::video_memory_writer};
 use mem::KernelAllocator;
 use threading::{create_thread_state, thread_system_start};
@@ -72,7 +73,7 @@ extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lin
         kernel_allocator().init(memory_start..memory_end);
 
         println!("Setting up IDTR");
-        idt::load();
+        arch::load_idt();
         println!("IDTR set up!");
 
         println!("Enabling paging");

@@ -1,4 +1,5 @@
-use super::thread_functions::{PrepareThreadContext, SwitchThreadsContext, ThreadFunction};
+use super::thread_functions::ThreadFunction;
+use crate::arch::{PrepareThreadContext, SwitchThreadsContext};
 use crate::fs::fs_manager::RootFileSystem;
 use crate::system::{running_thread_ppid, unwrap_system};
 use crate::threading::process::{Pid, ProcessState, Tid};
@@ -102,9 +103,9 @@ pub struct ThreadControlBlock {
 
     // The user virtual address containing the user instruction pointer to
     // switch to next time this thread is run.
-    pub eip: NonNull<u8>,
+    pub ip: NonNull<u8>,
     // Like above, but the stack pointer.
-    pub esp: NonNull<u8>,
+    pub sp: NonNull<u8>,
 
     pub tid: Tid,
     // The PID of the parent PCB.
@@ -260,18 +261,16 @@ impl ThreadControlBlock {
 
     #[allow(unused)]
     pub fn new_with_setup(
-        eip: ThreadFunction,
+        entry: ThreadFunction,
         is_kernel: bool,
         parent_pid: Pid,
         file_system: &mut RootFileSystem,
         state: &mut ProcessState,
     ) -> Self {
-        let entry = NonNull::new(eip as *mut u8).expect("function pointers are non-null");
-
-        let eip = NonNull::new(eip as *mut u8).expect("function pointers are non-null");
+        let ip = NonNull::new(entry as *mut u8).expect("function pointers are non-null");
 
         let mut new_thread = Self::new(
-            eip,
+            ip,
             is_kernel,
             ProcessControlBlock::create(state, file_system, parent_pid)
                 .lock()
@@ -295,13 +294,13 @@ impl ThreadControlBlock {
         unsafe {
             *prepare_thread_context
                 .as_ptr()
-                .cast::<PrepareThreadContext>() = PrepareThreadContext::new(eip.as_ptr());
+                .cast::<PrepareThreadContext>() = PrepareThreadContext::new(ip.as_ptr());
             *switch_threads_context
                 .as_ptr()
                 .cast::<SwitchThreadsContext>() = SwitchThreadsContext::new();
         }
 
-        new_thread.eip = eip; // !!!
+        new_thread.ip = ip; // !!!
 
         // Our thread can now be run via the `switch_threads` method.
         new_thread.status = ThreadStatus::Ready;
@@ -323,9 +322,9 @@ impl ThreadControlBlock {
         Self {
             kernel_stack_pointer,
             kernel_stack,
-            eip: NonNull::new(entry_instruction.as_ptr()).expect("failed to create eip"),
-            esp: NonNull::new((USER_STACK_BOTTOM_VIRT + USER_THREAD_STACK_SIZE) as *mut u8)
-                .expect("failed to create esp"),
+            ip: NonNull::new(entry_instruction.as_ptr()).expect("failed to create ip"),
+            sp: NonNull::new((USER_STACK_BOTTOM_VIRT + USER_THREAD_STACK_SIZE) as *mut u8)
+                .expect("failed to create sp"),
             tid,
             pid, // Potentially could be swapped to directly copy the pid of the running thread
             is_kernel,
@@ -362,8 +361,8 @@ impl ThreadControlBlock {
         ThreadControlBlock {
             kernel_stack_pointer: NonNull::dangling(), // This will be set in the context switch immediately following.
             kernel_stack: NonNull::dangling(),
-            eip: NonNull::dangling(),
-            esp: NonNull::dangling(),
+            ip: NonNull::dangling(),
+            sp: NonNull::dangling(),
             tid: state.allocate_tid(),
             pid: ProcessControlBlock::create(state, file_system, 0)
                 .lock()
@@ -428,8 +427,8 @@ impl ThreadControlBlock {
         if self.tid != 0 {
             self.kernel_stack_pointer = NonNull::dangling();
 
-            self.eip = NonNull::dangling();
-            self.esp = NonNull::dangling();
+            self.ip = NonNull::dangling();
+            self.sp = NonNull::dangling();
 
             // TODO: drop up alloc'd memory
         }

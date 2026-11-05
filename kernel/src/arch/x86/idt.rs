@@ -5,7 +5,7 @@
 use core::{arch::asm, mem::size_of};
 use kidneyos_shared::{bit_array::BitArray, bitfield};
 
-use crate::interrupts::intr_handler::{
+use super::intr_handler::{
     general_protection_fault_handler, ide_prim_interrupt_handler, ide_secd_interrupt_handler,
     keyboard_handler, page_fault_handler, syscall_handler, timer_interrupt_handler,
     unhandled_handler,
