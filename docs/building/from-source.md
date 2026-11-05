@@ -23,10 +23,12 @@ cd KidneyOS
 
 ## Install Rust Toolchain
 
-Next, we will install the specific version of the Rust toolchain used by KidneyOS. We will do this using rustup. You can install it by running the command on the [rustup website](https://rustup.rs/), or by installing the [`rustup`](https://repology.org/project/rustup/versions) package with your package manager. Once you've done so, run the following from the root of the KidneyOS repository:
+Next, we will install the specific version of the Rust toolchain used by KidneyOS. We will do this using rustup. You can install it by running the command on the [rustup website](https://rustup.rs/), or by installing the [`rustup`](https://repology.org/project/rustup/versions) package with your package manager.
+
+The `rust-toolchain.toml` file at the root of the repository tells rustup which toolchain to use, so you don't need to select one yourself (and shouldn't run `rustup override`, which would take precedence over that file). However, recent versions of rustup no longer install toolchains automatically, so the first time you use the repository, run the following from its root:
 
 ```sh
-rustup override set nightly-2026-11-01-i686-unknown-linux-gnu
+rustup toolchain install
 ```
 
 Running `cargo --version` should now print:
