@@ -15,9 +15,15 @@ runs:
   steps:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v23
+      with:
+        # Upstream Nix only; Determinate Nix tries to log in to FlakeHub.
+        determinate: false
 
     - name: Use the Magic Nix Cache
       uses: DeterminateSystems/magic-nix-cache-action@v15
+      with:
+        use-flakehub: false
+        use-gha-cache: true
 
     # Building the devShell here keeps the time it takes out of the first real
     # step. Its cargo and rustc are also put on PATH, so that rust-cache keys
