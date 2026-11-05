@@ -20,7 +20,9 @@ mod kmain;
 #[cfg(target_os = "none")]
 mod paging;
 
-pub use context::{PrepareThreadContext, SwitchThreadsContext, context_switch};
+pub use context::{
+    FpuState, PrepareThreadContext, SwitchThreadsContext, context_switch, switch_fpu,
+};
 pub use gdt::set_kernel_stack;
 #[cfg(target_os = "none")]
 pub use paging::share_kernel_half;
@@ -63,9 +65,47 @@ pub fn halt_forever() -> ! {
 ///
 /// # Safety
 ///
-/// See the i686 version.
-pub unsafe fn enter_user_mode(_ip: core::ptr::NonNull<u8>, _sp: core::ptr::NonNull<u8>) -> ! {
-    // TODO(x86_64): iretq to ring 3 with the user selectors from gdt.rs (M4).
-    // Nothing creates user threads on x86_64 yet, so this isn't reached.
-    unimplemented!("user mode on x86_64")
+/// The loaded page tables must map `ip` and `sp` for user mode, and the kernel
+/// stack must have been set with [`set_kernel_stack`].
+pub unsafe fn enter_user_mode(ip: core::ptr::NonNull<u8>, sp: core::ptr::NonNull<u8>) -> ! {
+    // Interrupts enabled in user mode (IF), and the reserved bit 1.
+    const USER_RFLAGS: u64 = 0x202;
+    // SAFETY: Per the caller, user mode can run at ip and sp.
+    unsafe {
+        asm!(
+            // Data segments are mostly ignored in long mode, but iretq resets
+            // the ones with a privileged descriptor anyway.
+            "mov ds, {data:e}",
+            "mov es, {data:e}",
+            // The interrupt frame iretq returns with.
+            "push {data}", // ss
+            "push {sp}",
+            "push {rflags}",
+            "push {code}", // cs
+            "push {ip}",
+            // Don't leak kernel values to user mode.
+            "xor eax, eax",
+            "xor ebx, ebx",
+            "xor ecx, ecx",
+            "xor edx, edx",
+            "xor esi, esi",
+            "xor edi, edi",
+            "xor ebp, ebp",
+            "xor r8d, r8d",
+            "xor r9d, r9d",
+            "xor r10d, r10d",
+            "xor r11d, r11d",
+            "xor r12d, r12d",
+            "xor r13d, r13d",
+            "xor r14d, r14d",
+            "xor r15d, r15d",
+            "iretq",
+            data = in(reg) u64::from(gdt::USER_DATA_SELECTOR),
+            code = const gdt::USER_CODE_SELECTOR,
+            rflags = const USER_RFLAGS,
+            sp = in(reg) sp.as_ptr(),
+            ip = in(reg) ip.as_ptr(),
+            options(noreturn),
+        )
+    }
 }

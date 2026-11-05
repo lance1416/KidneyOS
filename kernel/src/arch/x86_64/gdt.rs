@@ -16,9 +16,7 @@ pub const KERNEL_CODE_SELECTOR: u16 = 0x08;
 pub const KERNEL_DATA_SELECTOR: u16 = 0x10;
 // User data before user code, in the order `sysret` expects them in, should
 // KidneyOS ever use it.
-#[allow(dead_code)]
 pub const USER_DATA_SELECTOR: u16 = 0x18 | 3;
-#[allow(dead_code)]
 pub const USER_CODE_SELECTOR: u16 = 0x20 | 3;
 pub const TSS_SELECTOR: u16 = 0x28;
 

@@ -141,3 +141,23 @@ impl SwitchThreadsContext {
         }
     }
 }
+
+/// A thread's floating-point register state. User programs on i686 don't use
+/// SSE (they are built for i586), and the kernel doesn't use the FPU, so
+/// there is nothing to save.
+#[derive(Debug)]
+pub struct FpuState;
+
+impl FpuState {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+/// Switches the floating-point register state between threads: nothing to
+/// do on i686 (see [`FpuState`]).
+///
+/// # Safety
+///
+/// Always safe on i686; see the x86_64 version.
+pub unsafe fn switch_fpu(_from: &mut FpuState, _to: &FpuState) {}

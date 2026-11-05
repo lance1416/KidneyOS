@@ -41,8 +41,8 @@ pub fn create_thread_state() -> ThreadState {
 
 /// Thread system must have been previously enabled.
 ///
-/// `init_elf` is the first user program to run, if any.
-pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: Option<&[u8]>) -> ! {
+/// `init_elfs` are the user programs to start, each as its own process.
+pub fn thread_system_start(kernel_page_manager: PageManager, init_elfs: &[&[u8]]) -> ! {
     assert_eq!(intr_get_level(), IntrLevel::IntrOff);
     let system = unwrap_system();
     // We must 'turn the kernel thread into a thread'.
@@ -60,8 +60,7 @@ pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: Option<&[
     // SAFETY: Interrupts must be disabled.
     *system.threads.running_thread.lock() = Some(Box::new(kernel_tcb));
 
-    if let Some(init_elf) = init_elf {
-        // Create the initial user program thread.
+    for init_elf in init_elfs {
         let elf = Elf::parse_bytes(init_elf).expect("failed to parse provided elf file");
 
         // Create the initial user program thread.
@@ -69,7 +68,8 @@ pub fn thread_system_start(kernel_page_manager: PageManager, init_elf: Option<&[
             .expect("Failed to parse Elf for initial program.");
 
         system.threads.scheduler.lock().push(Box::new(user_tcb));
-    } else {
+    }
+    if init_elfs.is_empty() {
         println!("No init program to run");
     }
 

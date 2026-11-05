@@ -19,13 +19,19 @@ GRUB_MKRESCUE ?= grub-mkrescue
 
 export CARGO_TARGET_DIR
 
+# The user programs the kernel starts when booting (a comma-separated list),
+# each as its own process; see kernel/build.rs.
+KIDNEYOS_INIT ?= pipes
+
+# What the smoke test waits for on the serial port (a list of quoted strings;
+# see build-support/qemu-smoke.bash): init (pipes, by default) making a system
+# call (pipe) and exiting successfully, and the shell prompt.
+SMOKE_EXPECT := 'syscall number 0x2A' 'exited with code 0' 'kidney:/$$'
+
 ifeq ($(ARCH),i686)
 KERNEL_TARGET := i686-unknown-kernel
 QEMU := qemu-system-i386
 OBJCOPY := $(CROSS_PREFIX)objcopy
-# What the smoke test waits for on the serial port (a list of quoted strings):
-# the shell prompt.
-SMOKE_EXPECT := 'kidney:/$$'
 ifneq ($(KIDNEYOS_TEST),)
 $(error KIDNEYOS_TEST is only supported with ARCH=x86_64)
 endif
@@ -38,13 +44,12 @@ OBJCOPY := $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc --print host
 # Set to run a test while booting; see kmain.rs. With KIDNEYOS_TEST=pagefault,
 # the kernel writes to an unmapped address, and the page fault handler maps it.
 KIDNEYOS_TEST ?=
-# The smoke test waits for the IDE driver to have read the disk, the root file
-# system, both preemption test threads (one of which only gets to run if the
-# timer preempts the other) and the shell prompt.
-X86_64_SMOKE_EXPECT := 'IDE subsystem initialized' 'Root filesystem mounted' \
-	'was preempted while spinning' 'started after thread' 'kidney:/$$'
 ifeq ($(KIDNEYOS_TEST),)
-SMOKE_EXPECT := $(X86_64_SMOKE_EXPECT)
+# Besides what the i686 smoke test waits for: the IDE driver having read the
+# disk, the root file system, and both preemption test threads (one of which
+# only gets to run if the timer preempts the other).
+SMOKE_EXPECT := 'IDE subsystem initialized' 'Root filesystem mounted' \
+	'was preempted while spinning' 'started after thread' $(SMOKE_EXPECT)
 else ifeq ($(KIDNEYOS_TEST),pagefault)
 SMOKE_EXPECT := 'page fault: cr2=0x00000BADBEEF0128' 'KIDNEYOS_TEST=pagefault: passed'
 else
@@ -89,18 +94,31 @@ help: ## Show this help
 	    $(MAKEFILE_LIST)
 	@echo
 	@echo 'Variables: ARCH=i686|x86_64, PROFILE=dev|release, QEMU_DEBUG=<qemu -d items>,'
-	@echo '           BOCHS_DISPLAY=<bochs display_library>, KIDNEYOS_TEST=pagefault (x86_64)'
+	@echo '           BOCHS_DISPLAY=<bochs display_library>, KIDNEYOS_INIT=<program>[,<program>...],'
+	@echo '           KIDNEYOS_TEST=pagefault (x86_64)'
 
 .PHONY: iso
 iso: $(ISO) ## Build the bootable ISO (build/ARCH/kidneyos.iso); the default target
 
 # Rust Builds
 
+# Records the settings that the kernel is built with (but cargo can't see
+# changing), so that the kernel is rebuilt when they change. PROFILE is here
+# because each profile's kernel is a different file: switching back to one
+# that is already built must still put it in the ISO.
+KERNEL_CONFIG := PROFILE=$(PROFILE) KIDNEYOS_TEST=$(KIDNEYOS_TEST) KIDNEYOS_INIT=$(KIDNEYOS_INIT)
+KERNEL_CONFIG_STAMP := $(BUILD_DIR)/kernel-config
+
+.PHONY: FORCE
+$(KERNEL_CONFIG_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@echo '$(KERNEL_CONFIG)' | cmp -s - $@ || echo '$(KERNEL_CONFIG)' > $@
+
 ifeq ($(ARCH),i686)
 
 $(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/i686.ld $(TRAMPOLINE) $(PROGRAMS) \
-		$(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
-	KIDNEYOS_TRAMPOLINE_DIR=$(PROJECT_DIR)/$(TRAMPOLINE_DIR) cargo rustc \
+		$(KERNEL_CONFIG_STAMP) $(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
+	KIDNEYOS_TRAMPOLINE_DIR=$(PROJECT_DIR)/$(TRAMPOLINE_DIR) KIDNEYOS_INIT='$(KIDNEYOS_INIT)' cargo rustc \
 	  --bin kidneyos \
 	  --manifest-path $< \
 	  --profile $(PROFILE) \
@@ -112,6 +130,7 @@ $(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/i686.ld $(TRAMPOLINE) 
 	  -C link-arg=-T -C link-arg=build-support/i686.ld \
 	  -C link-arg=-z -C link-arg=max-page-size=0x1000 \
 	  -C link-arg=-n
+	@touch $@
 
 $(RAW_TRAMPOLINE): trampoline/Cargo.toml Cargo.lock \
 		$(call cargo-deps,$(ARTIFACT_DIR)/libkidneyos_trampoline.d)
@@ -129,17 +148,9 @@ else ifeq ($(ARCH),x86_64)
 # uses the kernel code model, and core and alloc come prebuilt for it; the
 # rustflags in .cargo/config.toml link it at a fixed address rather than as a
 # static PIE. The boot stub is part of the kernel, so there is no trampoline.
-# Records KIDNEYOS_TEST, so that the kernel is rebuilt when it changes.
-KIDNEYOS_TEST_STAMP := $(BUILD_DIR)/kidneyos-test
-
-.PHONY: FORCE
-$(KIDNEYOS_TEST_STAMP): FORCE
-	@mkdir -p $(dir $@)
-	@echo '$(KIDNEYOS_TEST)' | cmp -s - $@ || echo '$(KIDNEYOS_TEST)' > $@
-
-$(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld $(KIDNEYOS_TEST_STAMP) \
-		$(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
-	KIDNEYOS_TEST='$(KIDNEYOS_TEST)' cargo rustc \
+$(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld $(PROGRAMS) \
+		$(KERNEL_CONFIG_STAMP) $(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
+	KIDNEYOS_TEST='$(KIDNEYOS_TEST)' KIDNEYOS_INIT='$(KIDNEYOS_INIT)' cargo rustc \
 	  --bin kidneyos \
 	  --manifest-path $< \
 	  --profile $(PROFILE) \
@@ -234,7 +245,7 @@ SMOKE_TEST := build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) $(BUILD_DIR
 	$(SMOKE_EXPECT) -- $(QEMU_FLAGS)
 
 .PHONY: smoke-test
-smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt (x86_64: timer ticks)
+smoke-test: $(ISO) $(DISK) ## Boot in QEMU, and wait for init to succeed and the shell prompt
 	$(SMOKE_TEST)
 
 .PHONY: smoke
@@ -365,11 +376,12 @@ check-actionlint: ## Lint the GitHub Actions workflows
 ifeq ($(ARCH),i686)
 clippy: $(PROGRAMS) ## Run clippy on the kernel and the user programs, denying warnings
 	cargo clippy --target i686-unknown-linux-gnu --workspace -- -D warnings
-	$(PROGRAMS_CARGO) clippy --workspace -- -D warnings
+	$(PROGRAMS_CARGO) clippy $(PROGRAMS_CARGO_ARGS) --workspace -- -D warnings
 else
-# Only the kernel (and what it uses) builds for x86_64 so far.
-clippy:
+# The kernel (and what it uses; the trampoline is i686 only) and the programs.
+clippy: $(PROGRAMS)
 	cargo clippy --target $(KERNEL_TARGET) --package kidneyos --package kidneyos-shared -- -D warnings
+	$(PROGRAMS_CARGO) clippy $(PROGRAMS_CARGO_ARGS) --workspace -- -D warnings
 endif
 
 .PHONY: check-fast

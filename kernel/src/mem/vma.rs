@@ -23,6 +23,9 @@ pub struct VMA {
 pub enum VMAInfo {
     /// This VMA contains the stack
     Stack,
+    /// Never mapped: reserves addresses (below the stack) so that accessing
+    /// them faults, and nothing else is placed there.
+    Guard,
     /// This VMA contains the heap
     Heap,
     /// This VMA contains a memory-mapped file
@@ -40,6 +43,7 @@ impl Clone for VMAInfo {
     fn clone(&self) -> Self {
         match self {
             Self::Stack => Self::Stack,
+            Self::Guard => Self::Guard,
             Self::Heap => Self::Heap,
             Self::MMap { fs, inode, offset } => {
                 let fs = *fs;
@@ -89,6 +93,7 @@ impl VMA {
             // important we don't use the virtual address here since it may be read-only!
             let data = core::slice::from_raw_parts_mut(frame_ptr, PAGE_FRAME_SIZE);
             match &self.info {
+                VMAInfo::Guard => unreachable!("guard VMAs are never installed"),
                 VMAInfo::Stack | VMAInfo::Heap => {
                     // zero memory, to prevent data from being leaked between processes.
                     data.fill(0);
@@ -168,6 +173,9 @@ impl VMAList {
             let Some((vma_addr, vma)) = self.vma_at(addr) else {
                 return false;
             };
+            if matches!(vma.info, VMAInfo::Guard) {
+                return false;
+            }
             vma.install_in_page_table(addr, addr - vma_addr)
         }
     }

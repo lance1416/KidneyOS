@@ -6,6 +6,7 @@ use super::{
     paging::{self, phys_to_virt},
 };
 use crate::{
+    INIT_PROGRAMS,
     interrupts::{intr_disable, intr_enable, pic},
     kernel_allocator,
     paging::{PageManager, PageManagerDefault},
@@ -58,6 +59,10 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
         idt::init();
     }
     println!("GDT, TSS and IDT loaded");
+
+    // SAFETY: Only changes how x87/SSE instructions behave, which the kernel
+    // doesn't use.
+    unsafe { enable_sse() };
 
     // SAFETY: The bootloader passed the physical address of a valid boot
     // information structure, which nothing has overwritten (nothing has
@@ -120,7 +125,43 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
         println!("PIT set up!");
     }
 
-    start_kernel(page_manager, None, &[preemption_test, preemption_test])
+    start_kernel(
+        page_manager,
+        INIT_PROGRAMS,
+        &[preemption_test, preemption_test],
+    )
+}
+
+/// Lets user programs use SSE (every x86_64 CPU has it): CR0.EM off (no x87
+/// emulation), CR0.MP on (wait/fwait honour CR0.TS), CR0.NE on (x87 errors
+/// raise #MF rather than the legacy external interrupt), and CR4.OSFXSR
+/// (fxsave/fxrstor and SSE instructions) and CR4.OSXMMEXCPT (unmasked SIMD
+/// floating-point exceptions raise #XM rather than #UD) on. Threads' register
+/// state is switched with `fxsave`/`fxrstor` (see `context::FpuState`).
+unsafe fn enable_sse() {
+    const CR0_MP: u64 = 1 << 1;
+    const CR0_EM: u64 = 1 << 2;
+    const CR0_TS: u64 = 1 << 3;
+    const CR0_NE: u64 = 1 << 5;
+    const CR4_OSFXSR: u64 = 1 << 9;
+    const CR4_OSXMMEXCPT: u64 = 1 << 10;
+    // SAFETY: Per the caller.
+    unsafe {
+        core::arch::asm!(
+            "mov {tmp}, cr0",
+            "and {tmp}, {cr0_clear}",
+            "or {tmp}, {cr0_set}",
+            "mov cr0, {tmp}",
+            "mov {tmp}, cr4",
+            "or {tmp}, {cr4_set}",
+            "mov cr4, {tmp}",
+            tmp = out(reg) _,
+            cr0_clear = in(reg) !(CR0_EM | CR0_TS),
+            cr0_set = const CR0_MP | CR0_NE,
+            cr4_set = const CR4_OSFXSR | CR4_OSXMMEXCPT,
+            options(nostack),
+        );
+    }
 }
 
 /// The physical memory the kernel image (including the boot stub) was loaded
@@ -166,7 +207,8 @@ static PREEMPTION_TEST_STARTED: [AtomicBool; 2] = [AtomicBool::new(false), Atomi
 /// Run by two kernel threads at startup, to show that the timer preempts
 /// threads: each spins without yielding until the other one has started. The
 /// first one to run only gets past that if it is preempted.
-// TODO(x86_64): Remove once user programs show the same (M4).
+// Kernel threads don't make system calls, so this checks the timer's
+// preemption on its own.
 extern "C" fn preemption_test() -> i32 {
     let me = PREEMPTION_TEST_THREADS.fetch_add(1, Ordering::Relaxed) % 2;
     let other = 1 - me;

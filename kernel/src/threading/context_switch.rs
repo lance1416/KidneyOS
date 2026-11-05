@@ -57,6 +57,7 @@ pub unsafe fn switch_threads(
             arch::set_kernel_stack((*switch_to).kernel_stack_top());
         }
 
+        arch::switch_fpu(&mut (*switch_from).fpu, &(*switch_to).fpu);
         let previous = Box::from_raw(arch::context_switch(switch_from, switch_to));
 
         // We must mark this thread as running once again.

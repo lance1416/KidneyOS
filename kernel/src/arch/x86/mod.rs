@@ -14,7 +14,9 @@ use kidneyos_shared::{
     task_state_segment::TASK_STATE_SEGMENT,
 };
 
-pub use context::{PrepareThreadContext, SwitchThreadsContext, context_switch};
+pub use context::{
+    FpuState, PrepareThreadContext, SwitchThreadsContext, context_switch, switch_fpu,
+};
 pub use idt::load as load_idt;
 
 /// Returns whether maskable interrupts are enabled.

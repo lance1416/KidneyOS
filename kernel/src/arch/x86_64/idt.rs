@@ -15,14 +15,17 @@
 use super::gdt::{DOUBLE_FAULT_IST, KERNEL_CODE_SELECTOR, NMI_IST};
 use crate::{
     drivers::{ata::ata_interrupt, input::keyboard},
-    interrupts::{pic, timer},
+    interrupts::{handlers, pic, timer},
+    system::system_initialized,
     threading::scheduling,
+    user_program::syscall,
 };
 use core::{
     arch::{asm, global_asm},
     mem::size_of,
     sync::atomic::{AtomicU64, Ordering},
 };
+use kidneyos_shared::mem::USER_TOP;
 use kidneyos_shared::{eprintln, println};
 use spin::Mutex;
 
@@ -257,25 +260,45 @@ extern "C" fn interrupt_dispatch(frame: &mut TrapFrame) {
     };
     match vector {
         PAGE_FAULT => page_fault(frame),
-        GENERAL_PROTECTION => {
-            // A nonzero error code is the segment selector or IDT entry
-            // involved; bit 1 set means it's an IDT vector (index << 3).
-            fatal(frame, "general protection fault");
-        }
         DOUBLE_FAULT => fatal(frame, "double fault"),
         NMI => eprintln!("non-maskable interrupt at rip {:#X}, ignored", frame.rip),
+        // Exceptions in user mode are the process's fault: kill it. That
+        // includes general protection faults (privileged instructions,
+        // non-canonical addresses, `int` on a gate for the kernel only), whose
+        // nonzero error code is the segment selector or IDT entry involved;
+        // bit 1 set means it's an IDT vector (index << 3).
+        0..32 if from_user_mode(frame) => handlers::user_exception(
+            exception_name(vector),
+            frame.error_code,
+            to_usize(frame.rip),
+        ),
         BREAKPOINT => println!("breakpoint at rip {:#X}", frame.rip),
         0..32 => fatal(frame, exception_name(vector)),
-        SYSCALL => {
-            // TODO(x86_64): The system call ABI (M4).
-            eprintln!(
-                "int 0x80 (rax {:#X}): system calls are not implemented yet",
-                frame.rax
-            );
-        }
+        SYSCALL => system_call(frame),
         _ if (IRQ_BASE..IRQ_BASE + IRQ_COUNT).contains(&vector) => irq(vector - IRQ_BASE),
         _ => eprintln!("unexpected interrupt {vector:#X}, ignored"),
     }
+}
+
+fn from_user_mode(frame: &TrapFrame) -> bool {
+    frame.cs & 3 == 3
+}
+
+fn to_usize(value: u64) -> usize {
+    usize::try_from(value).expect("usize is 64 bits wide")
+}
+
+/// `int 0x80`: the system call number is in rax, the arguments in rdi, rsi
+/// and rdx (r10, r8 and r9 are reserved for more), and the result goes in
+/// rax. Every other register is restored from `frame` when returning.
+fn system_call(frame: &mut TrapFrame) {
+    let result = syscall::handler(
+        to_usize(frame.rax),
+        to_usize(frame.rdi),
+        to_usize(frame.rsi),
+        to_usize(frame.rdx),
+    );
+    frame.rax = result as u64;
 }
 
 /// Handles IRQ `irq`, like the i686 interrupt handlers do.
@@ -306,6 +329,16 @@ fn page_fault(frame: &TrapFrame) {
     let cr2: u64;
     // SAFETY: Only reads cr2.
     unsafe { asm!("mov {}, cr2", out(reg) cr2, options(nomem, nostack, preserves_flags)) };
+
+    // Faults in user memory, made by the process or by the kernel on its
+    // behalf, install a page from the process's VMAs (like the stack's), or
+    // kill the process.
+    if (from_user_mode(frame) || cr2 < USER_TOP as u64) && system_initialized() {
+        // The error code's flags are in the low bits.
+        #[allow(clippy::cast_possible_truncation)]
+        handlers::page_fault(to_usize(cr2), frame.error_code as u32, to_usize(frame.rip));
+        return;
+    }
 
     let error = frame.error_code;
     eprintln!(
@@ -354,6 +387,7 @@ fn exception_name(vector: u8) -> &'static str {
     match vector {
         DIVIDE_ERROR => "divide error",
         1 => "debug exception",
+        BREAKPOINT => "breakpoint",
         4 => "overflow",
         5 => "bound range exceeded",
         6 => "invalid opcode",
@@ -361,6 +395,7 @@ fn exception_name(vector: u8) -> &'static str {
         10 => "invalid TSS",
         11 => "segment not present",
         12 => "stack-segment fault",
+        GENERAL_PROTECTION => "general protection fault",
         16 => "x87 floating-point exception",
         17 => "alignment check",
         18 => "machine check",

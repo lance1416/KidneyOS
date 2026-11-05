@@ -15,9 +15,6 @@ mod rush;
 pub mod sync;
 mod system;
 mod threading;
-// TODO(x86_64): Only reachable through system calls, which x86_64 doesn't
-// have yet (M4).
-#[cfg_attr(target_arch = "x86_64", allow(dead_code))]
 mod user_program;
 pub mod vfs;
 
@@ -68,9 +65,10 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-#[cfg(target_arch = "x86")]
-const INIT: &[u8] =
-    include_bytes!("../../build/programs/i586-unknown-linux-gnu/release/pipes").as_slice();
+/// The user programs to start when booting, each as its own process (one
+/// after the other, so they get consecutive pids). Chosen at build time with
+/// `make KIDNEYOS_INIT=name,...` (default: pipes); see build.rs.
+pub const INIT_PROGRAMS: &[&[u8]] = include!(concat!(env!("OUT_DIR"), "/init_programs.rs"));
 
 #[cfg(target_arch = "x86")]
 #[cfg_attr(not(test), unsafe(no_mangle))]
@@ -103,19 +101,20 @@ extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lin
         page_manager
     };
 
-    start_kernel(page_manager, Some(INIT), &[])
+    start_kernel(page_manager, INIT_PROGRAMS, &[])
 }
 
 /// The architecture-independent part of booting, after the architecture's
 /// entry point has set up memory (including the kernel allocator), the
-/// descriptor tables and the PIT. Starts the threads, the first of which runs
-/// `init` (if any), and continues as the kernel shell (rush).
+/// descriptor tables and the PIT. Starts the threads, including a process for
+/// each of the user programs in `init`, and continues as the kernel shell
+/// (rush).
 ///
 /// `page_manager` is the address space of the thread this becomes, and
 /// `kernel_threads` are kernel threads to start besides the IDE driver's.
 pub fn start_kernel(
     page_manager: PageManager,
-    init: Option<&[u8]>,
+    init: &[&[u8]],
     kernel_threads: &[ThreadFunction],
 ) -> ! {
     println!("Initializing Thread System...");

@@ -19,7 +19,7 @@ make run-qemu-ng   # run it in QEMU without a graphical window
 make check         # run the same checks as CI
 ```
 
-The kernel is being ported to x86_64: `make ARCH=x86_64 run-qemu-ng` builds and boots that port (it runs the kernel, but no user programs yet).
+The kernel is being ported to x86_64: `make ARCH=x86_64 run-qemu-ng` builds and boots that port (including the user programs).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
 

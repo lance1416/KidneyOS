@@ -1,9 +1,9 @@
 use super::thread_functions::ThreadFunction;
-use crate::arch::{PrepareThreadContext, SwitchThreadsContext};
+use crate::arch::{FpuState, PrepareThreadContext, SwitchThreadsContext};
 use crate::fs::fs_manager::RootFileSystem;
 use crate::system::{running_thread_ppid, unwrap_system};
 use crate::threading::process::{Pid, ProcessState, Tid};
-use crate::user_program::elf::{ElfArchitecture, ElfProgramType, ElfUsage};
+use crate::user_program::elf::{ElfArchitecture, ElfClass, ElfProgramType, ElfUsage};
 use crate::{
     Mutex,
     fs::fs_manager::FileSystemID,
@@ -32,7 +32,16 @@ pub const KERNEL_THREAD_STACK_FRAMES: usize = 4;
 const KERNEL_THREAD_STACK_SIZE: usize = KERNEL_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
 pub const USER_THREAD_STACK_FRAMES: usize = 4 * 1024;
 pub const USER_THREAD_STACK_SIZE: usize = USER_THREAD_STACK_FRAMES * PAGE_FRAME_SIZE;
+#[cfg(target_arch = "x86")]
 pub const USER_STACK_BOTTOM_VIRT: usize = 0x100000;
+/// On x86_64 the stack is at the top of the user half, ending at the last page
+/// below the non-canonical hole.
+#[cfg(target_arch = "x86_64")]
+pub const USER_STACK_BOTTOM_VIRT: usize = 0x7FFF_FFFF_F000 - USER_THREAD_STACK_SIZE;
+/// Where the user stack pointer starts: the top of the stack, which is
+/// 16-byte aligned as the System V ABI requires at the entry point.
+pub const USER_STACK_TOP_VIRT: usize = USER_STACK_BOTTOM_VIRT + USER_THREAD_STACK_SIZE;
+const _: () = assert!(USER_STACK_TOP_VIRT % 16 == 0);
 
 #[allow(unused)]
 #[derive(PartialEq, Debug)]
@@ -80,6 +89,13 @@ impl ProcessControlBlock {
             USER_STACK_BOTTOM_VIRT,
         );
         assert!(stack_avail, "stack virtual address range not available");
+        // A stack overflow faults on the guard page (killing the process)
+        // rather than running into whatever is below.
+        let guard_avail = vmas.add_vma(
+            VMA::new(VMAInfo::Guard, PAGE_FRAME_SIZE, false),
+            USER_STACK_BOTTOM_VIRT - PAGE_FRAME_SIZE,
+        );
+        assert!(guard_avail, "stack guard page address range not available");
 
         let pcb = Self {
             pid,
@@ -120,6 +136,8 @@ pub struct ThreadControlBlock {
     pub status: ThreadStatus,
     pub exit_code: Option<i32>,
     pub page_manager: PageManager,
+    /// The thread's floating-point and SIMD registers, while it isn't running.
+    pub fpu: FpuState,
 }
 
 #[derive(Debug)]
@@ -143,13 +161,13 @@ impl ThreadControlBlock {
             return Err(ThreadElfCreateError::NotExecutable);
         }
 
-        // TODO(x86_64): Load ELF64 programs (M4). Nothing runs user programs on
-        // x86_64 yet.
-        if cfg!(target_arch = "x86_64") {
-            unimplemented!("user programs on x86_64");
-        }
-
-        if elf.header.architecture != ElfArchitecture::X86 {
+        // Programs for this architecture only: 32-bit x86 ELFs on i686, 64-bit
+        // x86-64 ones on x86_64.
+        #[cfg(target_arch = "x86")]
+        let expected = (ElfClass::Elf32, ElfArchitecture::X86);
+        #[cfg(target_arch = "x86_64")]
+        let expected = (ElfClass::Elf64, ElfArchitecture::X8664);
+        if (elf.header.class, elf.header.architecture) != expected {
             return Err(ThreadElfCreateError::UnsupportedArchitecture);
         }
 
@@ -170,18 +188,22 @@ impl ThreadControlBlock {
                 continue;
             }
 
+            let virtual_address = usize::try_from(program_header.virtual_address)
+                .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
+            let memory_size = usize::try_from(program_header.memory_size)
+                .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
+
             // Some ELF files have off-alignment segments (off 4KB).
             // We need to pad this space with zeroes.
-            let segment_virtual_frame_start =
-                program_header.virtual_address as usize / PAGE_FRAME_SIZE;
+            let segment_virtual_frame_start = virtual_address / PAGE_FRAME_SIZE;
             let segment_virtual_start = segment_virtual_frame_start * PAGE_FRAME_SIZE;
-            let segment_padding = program_header.virtual_address as usize % PAGE_FRAME_SIZE;
+            let segment_padding = virtual_address % PAGE_FRAME_SIZE;
             // The segment occupies `memory_size` bytes in memory, of which only
             // the first `data.len()` (the file size) come from the file; the rest
             // (e.g. .bss) must be zero.
             // The parser guarantees memory_size >= data.len().
             let segment_padded_size = segment_padding
-                .checked_add(program_header.memory_size as usize)
+                .checked_add(memory_size)
                 .ok_or(ThreadElfCreateError::InvalidSegment)?;
 
             let frames = segment_padded_size.div_ceil(PAGE_FRAME_SIZE);
@@ -213,12 +235,26 @@ impl ThreadControlBlock {
 
                 // Map the physical address obtained by the allocation above to the
                 // virtual address assigned by the ELF header.
+                #[cfg(target_arch = "x86")]
                 page_manager.map_range(
                     phys_addr,
                     segment_virtual_start,
                     frames * PAGE_FRAME_SIZE,
                     program_header.writable,
                     true,
+                );
+                // W^X: only read-only segments marked executable (normally
+                // .text) can be executed.
+                #[cfg(target_arch = "x86_64")]
+                page_manager.map_range_flags(
+                    phys_addr,
+                    segment_virtual_start,
+                    frames * PAGE_FRAME_SIZE,
+                    kidneyos_shared::paging::PageFlags {
+                        write: program_header.writable,
+                        user: true,
+                        exec: program_header.executable && !program_header.writable,
+                    },
                 );
 
                 // Zero all mapped frames: the padding before the segment, the
@@ -235,9 +271,13 @@ impl ThreadControlBlock {
             }
         }
 
+        let entry = usize::try_from(elf.header.program_entry)
+            .map_err(|_| ThreadElfCreateError::InvalidEntryPoint)?;
+        if entry >= USER_TOP {
+            return Err(ThreadElfCreateError::InvalidEntryPoint);
+        }
         Ok(ThreadControlBlock::new_with_page_manager(
-            NonNull::new(elf.header.program_entry as *mut u8)
-                .ok_or(ThreadElfCreateError::InvalidEntryPoint)?,
+            NonNull::new(entry as *mut u8).ok_or(ThreadElfCreateError::InvalidEntryPoint)?,
             pid,
             page_manager,
             state,
@@ -310,14 +350,14 @@ impl ThreadControlBlock {
             kernel_stack_pointer,
             kernel_stack,
             ip: NonNull::new(entry_instruction.as_ptr()).expect("failed to create ip"),
-            sp: NonNull::new((USER_STACK_BOTTOM_VIRT + USER_THREAD_STACK_SIZE) as *mut u8)
-                .expect("failed to create sp"),
+            sp: NonNull::new(USER_STACK_TOP_VIRT as *mut u8).expect("failed to create sp"),
             tid,
             pid, // Potentially could be swapped to directly copy the pid of the running thread
             is_kernel,
             status: ThreadStatus::Invalid,
             exit_code: None,
             page_manager,
+            fpu: FpuState::new(),
         }
     }
 
@@ -358,6 +398,7 @@ impl ThreadControlBlock {
             status: ThreadStatus::Running,
             exit_code: None,
             page_manager,
+            fpu: FpuState::new(),
         }
     }
 

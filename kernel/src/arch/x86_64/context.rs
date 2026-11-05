@@ -2,9 +2,11 @@
 //!
 //! With the SysV calling convention, `context_switch` only has to save the
 //! callee-saved registers (rbx, rbp and r12-r15); the caller saves the rest.
-//! The kernel is built without SSE, so there is no other register state yet.
+//! The kernel is built without SSE; user programs' x87/SSE registers are
+//! switched separately (see [`FpuState`]).
 
 use crate::threading::{thread_control_block::ThreadControlBlock, thread_functions::run_thread};
+use alloc::boxed::Box;
 use core::mem::offset_of;
 
 /// Saves the callee-saved registers on the current stack, stores the stack
@@ -115,4 +117,49 @@ unsafe extern "C" fn prepare_thread() -> ! {
         "ud2", // run_thread never returns.
         run_thread = sym run_thread,
     )
+}
+
+/// A thread's x87/SSE register state, saved with `fxsave` while it isn't
+/// running.
+///
+/// Saved and restored eagerly on every thread switch (see [`switch_fpu`]),
+/// rather than lazily with CR0.TS and a #NM handler: the kernel itself never
+/// uses these registers (it is built soft-float), switches are infrequent,
+/// and it can't go wrong when a thread is preempted, exits or execs.
+#[derive(Debug)]
+pub struct FpuState(Box<FxSaveArea>);
+
+/// The 512-byte area `fxsave` and `fxrstor` use, which must be 16-byte aligned.
+#[repr(C, align(16))]
+#[derive(Debug)]
+struct FxSaveArea([u8; 512]);
+
+impl FpuState {
+    /// The state after `fninit`, with all SIMD floating-point exceptions
+    /// masked: the x87 control word 0x37F and MXCSR 0x1F80.
+    pub fn new() -> Self {
+        let mut area = Box::new(FxSaveArea([0; 512]));
+        area.0[0..2].copy_from_slice(&0x037F_u16.to_le_bytes());
+        area.0[24..28].copy_from_slice(&0x1F80_u32.to_le_bytes());
+        Self(area)
+    }
+}
+
+/// Saves the running thread's x87/SSE registers in `from`, and loads `to`'s.
+///
+/// # Safety
+///
+/// SSE must be enabled (see `kmain`'s `enable_sse`), and `to` must hold a
+/// state that `fxrstor` accepts (one from [`FpuState::new`] or `fxsave`).
+pub unsafe fn switch_fpu(from: &mut FpuState, to: &FpuState) {
+    // SAFETY: Both areas are 512 bytes and 16-byte aligned.
+    unsafe {
+        core::arch::asm!(
+            "fxsave64 [{from}]",
+            "fxrstor64 [{to}]",
+            from = in(reg) from.0.0.as_mut_ptr(),
+            to = in(reg) to.0.0.as_ptr(),
+            options(nostack, preserves_flags),
+        );
+    }
 }
