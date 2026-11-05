@@ -30,7 +30,7 @@ pub mod phys {
             $(
             #[inline]
             pub fn $name() -> usize {
-                super::virt::$name() - super::OFFSET
+                super::virt::$name() - super::KERNEL_BASE
             }
             )*
         }
@@ -52,22 +52,39 @@ pub mod phys {
 pub mod virt {
     linker_offsets!(kernel_start, kernel_data_start, kernel_end);
 
-    macro_rules! to_virt {
-        ($($name:ident),*) => {
-            $(
-            #[inline]
-            pub fn $name() -> usize {
-                super::phys::$name() + super::OFFSET
-            }
-            )*
-        }
+    /// The main stack directly follows the kernel image, so it is mapped
+    /// relative to it.
+    #[inline]
+    pub fn main_stack_top() -> usize {
+        super::phys::main_stack_top() + super::KERNEL_BASE
     }
 
-    to_virt!(main_stack_top, trampoline_heap_top);
+    /// Memory from here on is accessed through the direct map of physical
+    /// memory.
+    #[inline]
+    pub fn trampoline_heap_top() -> usize {
+        super::phys::trampoline_heap_top() + super::PHYS_MAP_OFFSET
+    }
 }
 
-// Any virtual address at or above OFFSET is a kernel address.
-pub const OFFSET: usize = 0x80000000;
+// Layout of the virtual address space. On i686 all three coincide: user space
+// is everything below 2GiB, and the kernel image as well as the direct map of
+// physical memory both start at 2GiB (so physical address `p` of the kernel
+// image is mapped at `p + 0x80000000`, like every other physical address).
+
+/// Virtual address that physical address 0 of the kernel image is linked at:
+/// the image (loaded at its physical address by the bootloader) lives at
+/// `phys + KERNEL_BASE`. Must match `KERNEL_BASE` in `build-support/i686.ld`.
+pub const KERNEL_BASE: usize = 0x8000_0000;
+
+/// Virtual address of the start of the direct map of physical memory: the
+/// physical address `p` is accessible at `p + PHYS_MAP_OFFSET`. Memory handed
+/// out by the frame and kernel allocators is addressed through it.
+pub const PHYS_MAP_OFFSET: usize = 0x8000_0000;
+
+/// Exclusive upper bound of user virtual addresses. Any virtual address at or
+/// above it is a kernel address.
+pub const USER_TOP: usize = 0x8000_0000;
 
 // TODO: Figure out how to detect kernel stack overflows.
 pub const MAIN_STACK_SIZE: usize = 2 * MB;

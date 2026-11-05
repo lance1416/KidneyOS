@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use core::alloc::Allocator;
 use core::slice::from_raw_parts;
-use kidneyos_shared::mem::OFFSET;
+use kidneyos_shared::mem::USER_TOP;
 use kidneyos_shared::paging::PageManager;
 
 pub fn check_and_copy_user_memory<A: Allocator>(
@@ -12,7 +12,7 @@ pub fn check_and_copy_user_memory<A: Allocator>(
     let range_end = pointer.checked_add(count)?;
 
     // Trying to read from kernel memory.
-    if range_end >= OFFSET {
+    if range_end >= USER_TOP {
         return None;
     }
 

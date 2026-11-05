@@ -3,7 +3,7 @@ use crate::kernel_allocator;
 use crate::system::unwrap_system;
 use crate::vfs::INodeNum;
 use alloc::collections::BTreeMap;
-use kidneyos_shared::mem::{OFFSET, PAGE_FRAME_SIZE};
+use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET};
 
 /// A list of virtual memory areas for a process
 #[derive(Debug, Default, Clone)]
@@ -80,7 +80,7 @@ impl VMA {
                 return false;
             };
             let frame_ptr = frame_ptr.as_ptr();
-            let phys_addr = frame_ptr as usize - OFFSET;
+            let phys_addr = frame_ptr as usize - PHYS_MAP_OFFSET;
             let mut tcb_guard = unwrap_system().threads.running_thread.lock();
             let tcb = tcb_guard.as_mut().expect("no running thread");
             tcb.page_manager

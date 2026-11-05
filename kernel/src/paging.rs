@@ -1,6 +1,6 @@
 use alloc::alloc::Global;
 use kidneyos_shared::{
-    mem::OFFSET,
+    mem::PHYS_MAP_OFFSET,
     paging::{self, kernel_mapping_ranges},
 };
 
@@ -12,7 +12,7 @@ pub trait PageManagerDefault {
 
 impl PageManagerDefault for PageManager<Global> {
     fn default() -> Self {
-        PageManager::from_mapping_ranges_in(kernel_mapping_ranges(), Global, OFFSET)
+        PageManager::from_mapping_ranges_in(kernel_mapping_ranges(), Global, PHYS_MAP_OFFSET)
     }
 }
 

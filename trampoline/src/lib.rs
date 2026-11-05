@@ -7,7 +7,7 @@ use core::{arch::asm, ptr::NonNull};
 use kidneyos_shared::{
     global_descriptor_table,
     mem::{
-        OFFSET, PAGE_FRAME_SIZE,
+        KERNEL_BASE, PAGE_FRAME_SIZE,
         phys::{
             kernel_end, main_stack_top, trampoline_data_start, trampoline_end, trampoline_heap_top,
             trampoline_start,
@@ -42,7 +42,7 @@ unsafe extern "C" fn _start() {
         call {}
         ",
         sym trampoline,
-        stack_size = const kidneyos_shared::mem::OFFSET - kidneyos_shared::mem::MAIN_STACK_SIZE,
+        stack_size = const KERNEL_BASE - kidneyos_shared::mem::MAIN_STACK_SIZE,
     )
 }
 
@@ -118,7 +118,7 @@ unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
             in(reg) video_memory_writer().cursor.div_ceil(VIDEO_MEMORY_COLS),
             in(reg) mem_upper as usize,
             sym main,
-            offset = const OFFSET,
+            offset = const KERNEL_BASE,
             options(noreturn)
         );
     }

@@ -18,7 +18,7 @@ use core::{
     mem::size_of,
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
-use kidneyos_shared::mem::{OFFSET, PAGE_FRAME_SIZE};
+use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, USER_TOP};
 
 // The stack size choice is based on that of x86-64 Linux and 32-bit Windows
 // Linux: https://docs.kernel.org/next/x86/kernel-stacks.html
@@ -180,7 +180,7 @@ impl ThreadControlBlock {
                 .checked_mul(PAGE_FRAME_SIZE)
                 .and_then(|len| len.checked_add(segment_virtual_start))
                 .ok_or(ThreadElfCreateError::InvalidSegment)?;
-            if segment_virtual_end > OFFSET {
+            if segment_virtual_end > USER_TOP {
                 return Err(ThreadElfCreateError::InvalidSegment);
             }
 
@@ -192,9 +192,9 @@ impl ThreadControlBlock {
                     .expect("no more frames...")
                     .cast::<u8>()
                     .as_ptr();
-                // Integer arithmetic: OFFSET is larger than isize::MAX, so
-                // `ptr::sub(OFFSET)` would be UB (and trips std's debug UB checks).
-                let phys_addr = kernel_virt_addr as usize - OFFSET;
+                // Integer arithmetic: PHYS_MAP_OFFSET is larger than isize::MAX, so
+                // `ptr::sub(PHYS_MAP_OFFSET)` would be UB (and trips std's debug UB checks).
+                let phys_addr = kernel_virt_addr as usize - PHYS_MAP_OFFSET;
 
                 // TODO: Throw an error if this range overlaps any previously mapped
                 // ranges, since `map_range` requires that the input range has not

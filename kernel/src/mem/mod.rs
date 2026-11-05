@@ -19,7 +19,7 @@ use core::{
 use dummy_allocator::DummyAllocatorSolution;
 use frame_allocator::{CoreMapEntry, FrameAllocatorSolution, placement_algorithms::NextFit};
 use kidneyos_shared::{
-    mem::{BOOTSTRAP_ALLOCATOR_SIZE, OFFSET, PAGE_FRAME_SIZE, virt::trampoline_heap_top},
+    mem::{BOOTSTRAP_ALLOCATOR_SIZE, PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, virt::trampoline_heap_top},
     sizes::{KB, MB},
 };
 use subblock_allocator::SubblockAllocatorSolution;
@@ -30,7 +30,7 @@ static TOTAL_NUM_DEALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
 const MAX_SUPPORTED_ALIGN: usize = 4096;
 /// "Upper memory" (as opposed to "lower memory") starts at 1MB.
-const UPPER_MEMORY_START: usize = MB + OFFSET;
+const UPPER_MEMORY_START: usize = MB + PHYS_MAP_OFFSET;
 
 trait FrameAllocator {
     /// Allocates "frames_requested" number of contiguous frames

@@ -1,6 +1,6 @@
 use core::mem::size_of;
-use kidneyos_shared::mem::OFFSET as KMEM_OFFSET;
 use kidneyos_shared::mem::PAGE_FRAME_SIZE;
+use kidneyos_shared::mem::USER_TOP;
 
 pub enum CStrError {
     Fault,
@@ -12,13 +12,13 @@ fn can_access_range<T>(start: *const T, count: usize, write: bool) -> bool {
     let Some(bytes) = count.checked_mul(size_of::<T>()) else {
         return false;
     };
-    if start >= KMEM_OFFSET {
+    if start >= USER_TOP {
         return false;
     }
     let Some(end) = start.checked_add(bytes) else {
         return false;
     };
-    if end >= KMEM_OFFSET {
+    if end >= USER_TOP {
         return false;
     }
     crate::system::unwrap_system()

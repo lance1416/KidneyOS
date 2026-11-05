@@ -5,7 +5,7 @@ use crate::{
     bit_array::BitArray,
     bitfield,
     mem::{
-        HUGE_PAGE_SIZE, OFFSET, PAGE_FRAME_SIZE,
+        HUGE_PAGE_SIZE, PAGE_FRAME_SIZE, PHYS_MAP_OFFSET,
         phys::{kernel_data_start, kernel_end, kernel_start, main_stack_top, trampoline_heap_top},
         virt,
     },
@@ -664,7 +664,8 @@ pub fn kernel_mapping_ranges() -> [MappingRange; 5] {
         MappingRange {
             phys_start: trampoline_heap_top(),
             virt_start: virt::trampoline_heap_top(),
-            len: (usize::MAX - OFFSET - trampoline_heap_top()).next_multiple_of(PAGE_FRAME_SIZE),
+            len: (usize::MAX - PHYS_MAP_OFFSET - trampoline_heap_top())
+                .next_multiple_of(PAGE_FRAME_SIZE),
             write: true,
             user: false,
         },

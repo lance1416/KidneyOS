@@ -2,7 +2,8 @@ ENTRY(_start)
 OUTPUT_FORMAT(elf32-i386)
 
 PHYS = 0x100000;
-OFFSET = 0x80000000;
+/* Must match KERNEL_BASE in shared/src/mem/mod.rs. */
+KERNEL_BASE = 0x80000000;
 PAGE_FRAME_SIZE = 4096;
 
 SECTIONS {
@@ -37,18 +38,18 @@ SECTIONS {
 }
 
 SECTIONS {
-    . += OFFSET;
+    . += KERNEL_BASE;
 
-    .text ALIGN(4K) : AT(ADDR(.text) - OFFSET) {
+    .text ALIGN(4K) : AT(ADDR(.text) - KERNEL_BASE) {
         kernel_start = .;
         *(EXCLUDE_FILE(*libkidneyos_trampoline.o) .text*)
     }
 
-    .rodata ALIGN(4K) : AT(ADDR(.rodata) - OFFSET) {
+    .rodata ALIGN(4K) : AT(ADDR(.rodata) - KERNEL_BASE) {
         *(EXCLUDE_FILE(*libkidneyos_trampoline.o) .rodata*)
     }
 
-    .data ALIGN(4K) : AT(ADDR(.data) - OFFSET) {
+    .data ALIGN(4K) : AT(ADDR(.data) - KERNEL_BASE) {
         kernel_data_start = .;
         *(EXCLUDE_FILE(*libkidneyos_trampoline.o) .data*)
         . = ALIGN(4K);
