@@ -123,28 +123,29 @@
             xz
             ;
           rust = rust-bin.fromRustupToolchainFile ../rust-toolchain.toml;
-          # Cross toolchain providing the i686-unknown-linux-gnu-* binutils and
-          # a linker for the i686-unknown-linux-gnu tests.
-          i686-pkgs = pkgs.pkgsCross.gnu32;
-          i686-cc = i686-pkgs.stdenv.cc;
-          # The x86_64-unknown-linux-gnu tests run natively on x86_64-linux;
-          # elsewhere they need a cross linker and QEMU's user-mode emulation.
+          # The user programs (x86_64-unknown-linux-gnu) and the host tests are
+          # built with the native toolchain on x86_64-linux; elsewhere they need
+          # a cross toolchain (x86_64-unknown-linux-gnu-gcc, -as, -ld, ...), and
+          # the tests QEMU's user-mode emulation.
           x86_64-native = system == "x86_64-linux";
-          x86_64-cc = pkgs.pkgsCross.gnu64.stdenv.cc;
-          # grub-mkrescue needs the i386-pc GRUB modules. On x86_64-linux the
-          # native GRUB package ships them; elsewhere we run the host's
-          # grub-mkrescue but point it at the modules from a cross-built GRUB.
+          x86_64-pkgs = pkgs.pkgsCross.gnu64;
+          x86_64-cc = x86_64-pkgs.stdenv.cc;
+          # GRUB loads the kernel from BIOS (its i386-pc platform, which starts
+          # it in 32-bit protected mode; the kernel enters long mode itself), so
+          # grub-mkrescue needs the i386-pc GRUB modules. The native GRUB
+          # package ships them on x86_64-linux; elsewhere we run the host's
+          # grub-mkrescue but point it at the modules from an x86_64 GRUB.
           grub2 =
-            if system == "x86_64-linux" then
+            if x86_64-native then
               pkgs.grub2
             else
-              pkgs.runCommand "grub2-mkrescue-i686-cross"
+              pkgs.runCommand "grub2-mkrescue-x86_64-cross"
                 {
                   nativeBuildInputs = [ pkgs.makeWrapper ];
                 }
                 ''
                   makeWrapper ${pkgs.grub2}/bin/grub-mkrescue $out/bin/grub-mkrescue \
-                    --add-flags "--directory=${i686-pkgs.grub2}/lib/grub/i386-pc"
+                    --add-flags "--directory=${x86_64-pkgs.grub2}/lib/grub/i386-pc"
                 '';
         in
         {
@@ -161,7 +162,6 @@
                 grcov
                 grub2
                 gzip
-                i686-cc
                 mdbook
                 mdsh
                 mtools
@@ -172,9 +172,6 @@
                 xz
               ]
               ++ pkgs.lib.optional (!x86_64-native) x86_64-cc;
-
-              CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER = "${i686-cc.targetPrefix}cc";
-              CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER = "${qemu}/bin/qemu-i386";
 
               shellHook = ''
                 export CARGO_TARGET_DIR="$PWD/build/target"
