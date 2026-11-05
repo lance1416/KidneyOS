@@ -1,12 +1,18 @@
 [build]
 target = "i686-unknown-linux-gnu"
 
-# Used for host-side checks (clippy, tests). `-C target-feature=-sse` used to be
-# passed here too, but current rustc rejects disabling SSE/SSE2 on
-# i686-unknown-linux-gnu since its ABI requires it. Code that actually runs on
+# Used for host-side checks (clippy, tests). Code that actually runs on
 # KidneyOS doesn't use this target: the kernel uses
 # build-support/i686-unknown-kernel.json and user programs use
-# i586-unknown-linux-gnu, neither of which use SSE.
+# i586-unknown-linux-gnu (see programs/.cargo/config.toml), neither of which
+# use SSE. No rustflags are needed here; the test binaries are ordinary Linux
+# programs, run with qemu-i386.
 [target.i686-unknown-linux-gnu]
 linker = "i686-unknown-linux-gnu-cc"
-rustflags = ["-C", "link-arg=-e _start -nostartfiles"]
+
+[alias]
+# Lint the kernel workspace like `make clippy` does (the user programs need
+# `make clippy`, since they're a separate workspace).
+lint = "clippy --target i686-unknown-linux-gnu --workspace -- -D warnings"
+# Run the tests without coverage instrumentation (`make test` adds it).
+t = "test --target i686-unknown-linux-gnu --workspace"
