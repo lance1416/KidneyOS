@@ -1,0 +1,24 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+[*.{rs,toml}]
+indent_size = 4
+
+[*.{nix,yml,yaml,md,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+# Fixtures are byte-exact test inputs.
+[kernel/tests/**]
+insert_final_newline = false
+trim_trailing_whitespace = false
