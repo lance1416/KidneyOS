@@ -16,4 +16,4 @@ default = ["ticket_mutex"]
 ticket_mutex = []
 
 [dev-dependencies]
-flate2 = "1.0.33"
+flate2 = "1.1.10"
