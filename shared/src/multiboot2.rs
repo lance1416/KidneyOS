@@ -1,10 +1,16 @@
-// https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information-format
+//! Parsing of the multiboot2 boot information.
+//!
+//! https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html#Boot-information-format
 
 use core::{
     ffi::{CStr, c_char},
     mem::size_of,
     ptr::{from_ref, read_unaligned},
 };
+
+/// The value that multiboot2 compatible bootloaders load into eax before
+/// transferring control to the OS.
+pub const EXPECTED_MAGIC: u32 = 0x36D7_6289;
 
 #[repr(C)]
 pub struct Info {

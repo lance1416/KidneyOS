@@ -1,7 +1,7 @@
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(not(test), no_main)]
 
-mod multiboot2;
+mod multiboot2_header;
 
 use core::{arch::asm, ptr::NonNull};
 use kidneyos_shared::{
@@ -15,14 +15,11 @@ use kidneyos_shared::{
         pool_allocator::PoolAllocator,
         regions::{PhysRegion, largest_region},
     },
+    multiboot2::{EXPECTED_MAGIC, Info, InfoTag, MEMORY_AVAILABLE},
     paging::{self, PageManager, kernel_mapping_ranges},
     println,
     sizes::MB,
     video_memory::{VIDEO_MEMORY_COLS, video_memory_writer},
-};
-use multiboot2::{
-    EXPECTED_MAGIC,
-    info::{Info, InfoTag, MEMORY_AVAILABLE},
 };
 
 #[cfg(target_os = "none")]
@@ -49,7 +46,7 @@ unsafe extern "C" fn _start() {
 }
 
 #[allow(dead_code)]
-unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
+unsafe extern "C" fn trampoline(magic: u32, multiboot2_info: *mut Info) {
     unsafe {
         assert!(
             magic == EXPECTED_MAGIC,
