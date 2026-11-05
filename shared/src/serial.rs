@@ -31,61 +31,67 @@ pub unsafe fn inb(port: u16) -> u8 {
     }
 }
 
-// TODO(x86_64): insw and outsw use 32-bit registers; port them along with the
-// ATA driver.
-
 /// Wrapper for assembly function insw - input from port to string.
 ///
-/// Input word from I/O port specified in DX into memory location specified in ES:EDI.
+/// Reads `count` words from I/O port `port` into `buffer`.
 ///
 /// # Safety
 ///
 /// * The caller must ensure that the port is a valid port to read from.
 /// * They also need to ensure the buffer is valid and has enough space to store the data.
-#[cfg(target_arch = "x86")]
 pub unsafe fn insw(port: u16, buffer: *mut u8, count: usize) {
+    // `rep insw` writes to [edi]/[rdi], counting down ecx/rcx; the direction
+    // flag is clear, as the ABI requires.
     unsafe {
+        #[cfg(target_arch = "x86")]
         asm!(
-        // Save EDI to restore it after the insw instruction.
-        "push edi",
-        // Load the buffer address into EDI.
-        "mov edi, eax",
-        // Invoke `insw` instruction.
-        "rep insw",
-        // Restore EDI.
-        "pop edi",
-        in("dx") port,
-        in("eax") buffer,
-        in("ecx") count,
-        options(nostack, preserves_flags)
+            "rep insw",
+            in("dx") port,
+            inout("edi") buffer => _,
+            inout("ecx") count => _,
+            options(nostack, preserves_flags),
+        );
+        #[cfg(target_arch = "x86_64")]
+        asm!(
+            "rep insw",
+            in("dx") port,
+            inout("rdi") buffer => _,
+            inout("rcx") count => _,
+            options(nostack, preserves_flags),
         );
     }
 }
 
 /// Wrapper for assembly function outsw - output string to port.
 ///
-/// Output word from memory location specified in DS:ESI to I/O port specified in DX
+/// Writes `count` words from `buffer` to I/O port `port`.
 ///
 /// # Safety
 ///
 /// The caller must ensure that the port is a valid port to write to.
 /// They also need to ensure the buffer is valid and has appropriate size to write to the port.
-#[cfg(target_arch = "x86")]
 pub unsafe fn outsw(port: u16, buffer: *const u8, count: usize) {
+    // `rep outsw` reads from [esi]/[rsi], counting down ecx/rcx.
     unsafe {
+        // LLVM reserves esi on i686, so it can't be an operand: swap the
+        // buffer into it and back.
+        #[cfg(target_arch = "x86")]
         asm!(
-        // Save ESI to restore it after the outsw instruction.
-        "push esi",
-        // Load the buffer address into ESI.
-        "mov esi, eax",
-        // Invoke `outsw` instruction.
-        "rep outsw",
-        // Restore ESI.
-        "pop esi",
-        in("dx") port,
-        in("eax") buffer,
-        in("ecx") count,
-        options(nostack, preserves_flags)
+            "xchg esi, {buffer}",
+            "rep outsw",
+            "xchg esi, {buffer}",
+            buffer = inout(reg) buffer => _,
+            in("dx") port,
+            inout("ecx") count => _,
+            options(nostack, preserves_flags, readonly),
+        );
+        #[cfg(target_arch = "x86_64")]
+        asm!(
+            "rep outsw",
+            in("dx") port,
+            inout("rsi") buffer => _,
+            inout("rcx") count => _,
+            options(nostack, preserves_flags, readonly),
         );
     }
 }
