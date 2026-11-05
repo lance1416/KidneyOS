@@ -113,11 +113,12 @@ unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: boo
         }
         channel.read_sector(&mut id);
 
-        // Calculate capacity.
-        let capacity = usize::from_le_bytes(
+        // Calculate capacity: the number of 28-bit LBA sectors, a 32-bit
+        // value (words 60 and 61).
+        let capacity: BlockSector = u32::from_le_bytes(
             id[120..124]
                 .try_into()
-                .expect("IDENTIFY capacity field is size_of::<usize>() bytes"),
+                .expect("IDENTIFY capacity field is 4 bytes"),
         );
         let name = if dev_no == 0 {
             channel.get_d0_name()
@@ -138,11 +139,7 @@ unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: boo
         let idx = block_manager.write().register_block(
             BlockType::Raw,
             &name,
-            // 32-bit x86 specific: usize is 32 bits, the same as BlockSector.
-            #[allow(clippy::cast_possible_truncation)]
-            {
-                capacity as BlockSector
-            },
+            capacity,
             Box::new(AtaDevice(dev_no)),
         );
 
