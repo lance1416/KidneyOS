@@ -14,7 +14,7 @@ pub struct Timespec {
 pub mod defs;
 pub use defs::*;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn exit(code: i32) {
     unsafe {
         asm!(
@@ -28,7 +28,7 @@ pub extern "C" fn exit(code: i32) {
 }
 
 #[allow(clippy::cast_possible_truncation)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn fork() -> Pid {
     let result: i32;
     unsafe {
@@ -43,7 +43,7 @@ pub extern "C" fn fork() -> Pid {
     result as Pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn read(fd: i32, buffer: *mut u8, count: usize) -> i32 {
     let result;
     unsafe {
@@ -54,7 +54,7 @@ pub extern "C" fn read(fd: i32, buffer: *mut u8, count: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn write(fd: i32, buffer: *const u8, count: usize) -> i32 {
     let result;
     unsafe {
@@ -65,7 +65,7 @@ pub extern "C" fn write(fd: i32, buffer: *const u8, count: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn open(name: *const c_char, flags: usize) -> i32 {
     let result;
     unsafe {
@@ -76,7 +76,7 @@ pub extern "C" fn open(name: *const c_char, flags: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn close(fd: i32) -> i32 {
     let result;
     unsafe {
@@ -87,7 +87,7 @@ pub extern "C" fn close(fd: i32) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lseek64(fd: i32, offset: i64, whence: i32) -> i64 {
     let mut offset = offset;
     let result: i32;
@@ -101,7 +101,7 @@ pub extern "C" fn lseek64(fd: i32, offset: i64, whence: i32) -> i64 {
     if result < 0 { result.into() } else { offset }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn getcwd(buf: *mut i8, size: usize) -> i32 {
     let result;
     unsafe {
@@ -112,7 +112,7 @@ pub extern "C" fn getcwd(buf: *mut i8, size: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chdir(path: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -123,7 +123,7 @@ pub extern "C" fn chdir(path: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mkdir(path: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -134,7 +134,7 @@ pub extern "C" fn mkdir(path: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn fstat(fd: i32, statbuf: *mut Stat) -> i32 {
     let result;
     unsafe {
@@ -145,7 +145,7 @@ pub extern "C" fn fstat(fd: i32, statbuf: *mut Stat) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn unlink(path: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -156,7 +156,7 @@ pub extern "C" fn unlink(path: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn link(source: *const c_char, dest: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -167,7 +167,7 @@ pub extern "C" fn link(source: *const c_char, dest: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn symlink(source: *const c_char, dest: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -178,7 +178,7 @@ pub extern "C" fn symlink(source: *const c_char, dest: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rename(source: *const c_char, dest: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -189,7 +189,7 @@ pub extern "C" fn rename(source: *const c_char, dest: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn rmdir(path: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -200,7 +200,7 @@ pub extern "C" fn rmdir(path: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn getdents(fd: i32, output: *mut Dirent, size: usize) -> i32 {
     let result;
     unsafe {
@@ -211,7 +211,7 @@ pub extern "C" fn getdents(fd: i32, output: *mut Dirent, size: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ftruncate(fd: i32, size: u64) -> i32 {
     let result;
     #[allow(clippy::cast_possible_truncation)]
@@ -225,7 +225,7 @@ pub extern "C" fn ftruncate(fd: i32, size: u64) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn sync() -> i32 {
     let result;
     unsafe {
@@ -234,7 +234,7 @@ pub extern "C" fn sync() -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn unmount(path: *const c_char) -> i32 {
     let result;
     unsafe {
@@ -245,7 +245,7 @@ pub extern "C" fn unmount(path: *const c_char) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mount(
     device: *const c_char,
     target: *const c_char,
@@ -260,7 +260,7 @@ pub extern "C" fn mount(
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::cast_possible_truncation)]
 pub extern "C" fn waitpid(pid: Pid, stat: *mut i32, options: i32) -> Pid {
     let result: i32;
@@ -278,7 +278,7 @@ pub extern "C" fn waitpid(pid: Pid, stat: *mut i32, options: i32) -> Pid {
     result as Pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn dup(fd: i32) -> i32 {
     let result: i32;
 
@@ -294,7 +294,7 @@ pub extern "C" fn dup(fd: i32) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn dup2(old_fd: i32, new_fd: i32) -> i32 {
     let result: i32;
 
@@ -310,7 +310,7 @@ pub extern "C" fn dup2(old_fd: i32, new_fd: i32) -> i32 {
 
     result
 }
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn pipe(fds: *mut i32) -> i32 {
     let result: i32;
 
@@ -326,7 +326,7 @@ pub extern "C" fn pipe(fds: *mut i32) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn execve(
     filename: *const c_char,
     argv: *const *const c_char,
@@ -350,7 +350,7 @@ pub extern "C" fn execve(
 
 // Seems to reference __kernel_timespec as the inputs for this syscall.
 // Not sure if we have this implemented.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn nanosleep(duration: *const Timespec, remainder: *mut Timespec) -> i32 {
     let result: i32;
     unsafe {
@@ -367,7 +367,7 @@ pub extern "C" fn nanosleep(duration: *const Timespec, remainder: *mut Timespec)
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::cast_possible_truncation)]
 pub extern "C" fn getpid() -> Pid {
     let result: i32;
@@ -383,7 +383,7 @@ pub extern "C" fn getpid() -> Pid {
     result as Pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::cast_possible_truncation)]
 pub extern "C" fn getppid() -> Pid {
     let result: i32;
@@ -399,7 +399,7 @@ pub extern "C" fn getppid() -> Pid {
     result as Pid
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scheduler_yield() -> i32 {
     let result: i32;
     unsafe {
@@ -414,7 +414,7 @@ pub extern "C" fn scheduler_yield() -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn clock_gettime(clock_id: i32, timespec: *mut Timespec) -> i32 {
     let result: i32;
     unsafe {
@@ -431,7 +431,7 @@ pub extern "C" fn clock_gettime(clock_id: i32, timespec: *mut Timespec) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn getrandom(buf: *mut i8, size: usize, flags: usize) -> i32 {
     let result: i32;
     unsafe {
@@ -449,7 +449,7 @@ pub extern "C" fn getrandom(buf: *mut i8, size: usize, flags: usize) -> i32 {
     result
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mmap(
     addr: *mut c_void,
     length: usize,
