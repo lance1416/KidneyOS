@@ -522,12 +522,13 @@ mod test {
         // Print current directory
         println!("Current directory: {:?}", env::current_dir().unwrap());
 
-        // Try to create block device
-        let mut file = File::open(path).unwrap();
+        // Try to create block device. The images are stored gzipped.
+        let file = File::open(path).unwrap();
         let mut buffer = Vec::new();
-        file.read_to_end(&mut buffer).expect("Failed to read file");
-        let metadata = file.metadata().unwrap();
-        println!("File size: {} bytes", metadata.len());
+        flate2::read::GzDecoder::new(file)
+            .read_to_end(&mut buffer)
+            .expect("Failed to read file");
+        println!("Image size: {} bytes", buffer.len());
 
         let block = block_from_file(Cursor::new(buffer));
         let mut vsfs = VSFS::new(block).unwrap();
@@ -612,7 +613,7 @@ mod test {
 
     // #[test]
     fn test_1file() {
-        let image_path = "tests/vsfs/vsfs-1file.disk";
+        let image_path = "tests/vsfs/vsfs-1file.disk.gz";
 
         // Check if file exists
         if !std::path::Path::new(image_path).exists() {
@@ -628,7 +629,7 @@ mod test {
 
     // #[test]
     fn test_3file() {
-        let image_path = "tests/vsfs/vsfs-3file.disk";
+        let image_path = "tests/vsfs/vsfs-3file.disk.gz";
 
         // Check if file exists
         if !std::path::Path::new(image_path).exists() {
@@ -643,7 +644,7 @@ mod test {
     }
     // //#[test]
     // fn test_3files() {
-    //     let image_path = "src/fs/tests/vsfs/images/vsfs-3file.disk";
+    //     let image_path = "src/fs/tests/vsfs/images/vsfs-3file.disk.gz";
 
     //     // Check if file exists
     //     if !std::path::Path::new(image_path).exists() {
@@ -656,7 +657,7 @@ mod test {
 
     // //#[test]
     // fn test_empty() {
-    //     let image_path = "src/fs/tests/vsfs/images/vsfs-empty.disk";
+    //     let image_path = "src/fs/tests/vsfs/images/vsfs-empty.disk.gz";
 
     //     // Check if file exists
     //     if !std::path::Path::new(image_path).exists() {
@@ -669,7 +670,7 @@ mod test {
 
     // //#[test]
     // fn test_42files() {
-    //     let image_path = "src/fs/tests/vsfs/images/vsfs-42file.disk";
+    //     let image_path = "src/fs/tests/vsfs/images/vsfs-42file.disk.gz";
 
     //     // Check if file exists
     //     if !std::path::Path::new(image_path).exists() {

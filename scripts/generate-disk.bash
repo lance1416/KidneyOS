@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
 
+# Linux only (needs parted, losetup, mkfs.* and sudo).
+#
+# Maintainer tool for regenerating build-support/disk.img.gz, the disk image
+# that `make run-qemu` and `make run-bochs` attach. You don't need it to build
+# or run KidneyOS: the Makefile unpacks the committed image into build/disk.img.
+# The committed image is a 50MiB disk with an MBR partition table and one ext4
+# partition, made with:
+#
+#   scripts/generate-disk.bash -s 50MiB -f ext4 -p msdos
+
 # Functions ----------------------------------------------------------------------------------------
 
 # Usage / help
 usage() {
-  echo "Usage: $0 [-s size] [-f filesystem] [-h help]"
-  echo "  -s, --size        Set the size (e.g., 500M, 10G)"
-  echo "  -f, --file-system Set the file system (fat16, fat32, exfat, ext2, ext4)"
+  echo "Usage: $0 [-s size] [-f filesystem] [-p partition-table] [-h help]"
+  echo "  -s, --size            Set the size (e.g., 500M, 10G)"
+  echo "  -f, --file-system     Set the file system (fat16, fat32, exfat, ext2, ext4)"
+  echo "  -p, --partition-table Set the partition table type (gpt (default), msdos)"
   echo "  -h, --help        Display this help message"
   exit 1
 }
@@ -69,6 +80,14 @@ while [[ "$#" -gt 0 ]]; do
       # Ensure filesystem is one of the valid options
       if [[ ! "$filesystem" =~ ^(fat16|fat32|exfat|ext2|ext4)$ ]]; then
         echo "Error: Invalid file system. Allowed values are fat16, fat32, exfat, ext2, ext4."
+        usage
+      fi
+      shift 2
+      ;;
+    -p|--partition-table)
+      partition="$2"
+      if [[ ! "$partition" =~ ^(gpt|msdos)$ ]]; then
+        echo "Error: Invalid partition table. Allowed values are gpt, msdos."
         usage
       fi
       shift 2
@@ -147,3 +166,8 @@ echo
 echo "Disk image created: $disk_name"
 echo "--------------------------------------------------"
 sudo parted "$disk_name" print
+
+gzip -9n -c "$disk_name" > build-support/disk.img.gz
+echo
+echo "Compressed it to build-support/disk.img.gz (commit that file, not $disk_name)."
+echo "Run 'make reset-disk' to use it."

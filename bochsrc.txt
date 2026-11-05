@@ -1,8 +1,15 @@
+# Run with `make run-bochs`, which builds the ISO and build/disk.img first, and
+# chooses the display library (override it with BOCHS_DISPLAY=..., e.g.
+# BOCHS_DISPLAY='x, options="gui_debug"' for the X11 debugger GUI on Linux).
+
+# Same layout as QEMU: the disk is the primary master, the CD-ROM the
+# secondary master.
 ata0: enabled=1, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
-ata0-master: type=cdrom, path="build/kidneyos.iso", status=inserted
+ata0-master: type=disk, path="build/disk.img", mode=flat, cylinders=100, heads=16, spt=63
+ata1: enabled=1, ioaddr1=0x170, ioaddr2=0x370, irq=15
+ata1-master: type=cdrom, path="build/kidneyos.iso", status=inserted
 boot: cdrom
 mouse: enabled=0
-display_library: x, options="gui_debug"
 sound: driver=dummy
 magic_break: enabled=1
 memory: guest=4096, host=512
