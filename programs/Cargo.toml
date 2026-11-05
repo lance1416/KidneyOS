@@ -6,7 +6,7 @@
 # build/programs/i586-unknown-linux-gnu/release/ (and with ARCH=x86_64, built for
 # x86_64-unknown-linux-gnu, in build/programs/x86_64-unknown-linux-gnu/release/).
 [workspace]
-members = ["bss", "example_rust", "execve", "pipes", "waitpid"]
+members = ["bss", "example_rust", "execve", "pipes", "sse", "waitpid"]
 resolver = "3"
 
 [workspace.package]

@@ -1,0 +1,7 @@
+[package]
+name = "sse"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kidneyos-syscalls.workspace = true

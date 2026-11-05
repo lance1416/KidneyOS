@@ -1,6 +1,6 @@
 # Every job only orchestrates: the work itself is done by make targets, so
-# `make check` (plus `make smoke-test`, `make docs` and
-# `make ARCH=x86_64 clippy iso smoke-test`, with and without
+# `make check` (plus `make smoke-test smoke-programs`, `make docs` and
+# `make ARCH=x86_64 clippy iso smoke-test smoke-programs`, with and without
 # KIDNEYOS_TEST=pagefault) locally runs the same checks as this workflow.
 # Setup shared by the jobs is in .github/actions/setup.
 name: CI
@@ -65,6 +65,10 @@ jobs:
         run: make -s coverage-summary >> "$GITHUB_STEP_SUMMARY"
       - name: Build the ISO
         run: make iso
+      # Rebuilds the kernel with other init programs (and then the default
+      # one again).
+      - name: Run the user programs and check their results
+        run: make smoke-programs
       - name: Check that generated files are committed
         run: git diff --exit-code
       - name: Upload the ISO
@@ -111,7 +115,7 @@ jobs:
         run: make ARCH=x86_64 clippy
       - name: Build the x86_64 ISO
         run: make ARCH=x86_64 iso
-      - name: Boot it and wait for the disk, the threads and the shell
+      - name: Boot it and wait for init and the shell
         run: make ARCH=x86_64 smoke-test
       - name: Upload the ISO
         uses: actions/upload-artifact@v7
@@ -123,6 +127,8 @@ jobs:
       # Rebuilds the kernel (and the ISO), so it runs after the upload.
       - name: Check that page faults are handled
         run: make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test
+      - name: Run the user programs and check their results
+        run: make ARCH=x86_64 smoke-programs
 
   docs:
     name: Build the docs

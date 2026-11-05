@@ -41,6 +41,10 @@ KidneyOS is being ported from i686 to x86_64. i686 is still the default; to buil
 make ARCH=x86_64 run-qemu-ng
 ```
 
-Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`). The x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, and then starts the same kernel as on i686: threads, the IDE driver (which reads `build/disk.img`), the root file system and the kernel shell. It doesn't run user programs yet. `make ARCH=x86_64 smoke-test` checks that it gets that far, and that the timer preempts threads. `make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
+Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`), and the user programs are built for x86_64 too (into `build/programs/x86_64-unknown-linux-gnu/` and `build/programs/bin-x86_64/`). The x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, and then runs the same kernel as on i686, including user programs.
+
+`make smoke-test` checks that KidneyOS boots, runs its init program (pipes) successfully, and gets to the shell prompt; with `ARCH=x86_64`, it also checks that the timer preempts threads. `make smoke-programs` boots once for each of the other test programs (bss, execve, waitpid, syscall_abi, and on x86_64 two sse processes at once), and checks their results. To boot with other programs, set `KIDNEYOS_INIT` to their names, separated by commas: for example, `make run-qemu-ng KIDNEYOS_INIT=bss`.
+
+`make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
 
 `make test` runs the tests on both architectures (`make test-i686` and `make test-x86_64` run them on one).

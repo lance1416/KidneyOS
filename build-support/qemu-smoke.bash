@@ -2,7 +2,8 @@
 
 # Boots KidneyOS in QEMU without a display, with the serial port written to a
 # log file, and succeeds once every EXPECTED string (e.g. the shell prompt)
-# shows up in it.
+# shows up in it. An EXPECTED string of the form "N*string" must show up in at
+# least N lines.
 #
 # Usage: build-support/qemu-smoke.bash QEMU TIMEOUT_SECONDS LOG_FILE EXPECTED... -- QEMU_ARGS...
 # Run through `make smoke-test`, which supplies the arguments.
@@ -36,10 +37,15 @@ trap 'kill "$qemu_pid" 2>/dev/null || true' EXIT
 
 # Prints the expected strings that aren't in the log yet; succeeds if any.
 missing() {
-  local found=1 string
+  local found=1 string count
   for string in "${expected[@]}"; do
-    if ! grep -qF -- "$string" "$log"; then
-      echo "'$string'"
+    count=1
+    if [[ $string =~ ^([0-9]+)\*(.*)$ ]]; then
+      count=${BASH_REMATCH[1]}
+      string=${BASH_REMATCH[2]}
+    fi
+    if (($(grep -cF -- "$string" "$log") < count)); then
+      echo "'$string' (x$count)"
       found=0
     fi
   done
@@ -47,10 +53,11 @@ missing() {
 }
 
 for ((i = 0; i < timeout_seconds; i++)); do
-  # A panic (whose message contains "panicked at") or a failure in the
-  # x86_64 boot stub won't get any further, so don't wait for the timeout.
-  if grep -qE 'panicked at|boot error' "$log"; then
-    echo "KidneyOS panicked or failed to boot." >&2
+  # A panic (whose message contains "panicked at"), a failure in the x86_64
+  # boot stub or a user program being killed (for a fault) won't get any
+  # further, so don't wait for the timeout.
+  if grep -qE 'panicked at|boot error|Process [0-9]+ killed' "$log"; then
+    echo "KidneyOS panicked, failed to boot or killed a process." >&2
     break
   fi
   if ! missing >/dev/null; then

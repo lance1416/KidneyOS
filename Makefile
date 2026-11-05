@@ -248,6 +248,43 @@ SMOKE_TEST := build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) $(BUILD_DIR
 smoke-test: $(ISO) $(DISK) ## Boot in QEMU, and wait for init to succeed and the shell prompt
 	$(SMOKE_TEST)
 
+# The user program tests: each boots the kernel with init programs
+# (PROGRAM_TEST_INIT_name) and waits for what shows that they work
+# (PROGRAM_TEST_EXPECT_name). "N*string" means at least N lines with string.
+PROGRAM_TESTS := bss execve waitpid syscall_abi
+PROGRAM_TEST_INIT_bss := bss
+PROGRAM_TEST_EXPECT_bss := 'exited with code 0'
+# execve runs example_rust, which exits with 1.
+PROGRAM_TEST_INIT_execve := execve
+PROGRAM_TEST_EXPECT_execve := 'syscall number 0xB' 'exited with code 1'
+# waitpid waits for example_rust (see programs/waitpid).
+PROGRAM_TEST_INIT_waitpid := waitpid,example_rust
+PROGRAM_TEST_EXPECT_waitpid := 'exited with code 1' 'exited with code 0'
+PROGRAM_TEST_INIT_syscall_abi := syscall_abi
+PROGRAM_TEST_EXPECT_syscall_abi := 'exited with code 0'
+ifeq ($(ARCH),x86_64)
+# Two processes using SSE at the same time (which the kernel must switch).
+PROGRAM_TESTS += sse
+PROGRAM_TEST_INIT_sse := sse,sse
+PROGRAM_TEST_EXPECT_sse := '2*exited with code 0'
+endif
+
+.PHONY: smoke-programs
+ifeq ($(ARCH),x86_64)
+smoke-programs: $(RUST_PROGRAMS_DIR)/sse
+endif
+smoke-programs: $(DISK) ## Boot with each user program test as init, and check its result
+ifeq ($(ARCH),x86_64)
+	@# The sse test only tests something if the compiler used SSE.
+	$(PROGRAMS_CROSS_PREFIX)objdump -d $(RUST_PROGRAMS_DIR)/sse | grep -q xmm
+endif
+	$(foreach test,$(PROGRAM_TESTS),\
+	  $(MAKE) --no-print-directory KIDNEYOS_INIT=$(PROGRAM_TEST_INIT_$(test)) iso && \
+	  build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) $(BUILD_DIR)/smoke-$(test).log \
+	    $(PROGRAM_TEST_EXPECT_$(test)) -- $(QEMU_FLAGS) && ) true
+	@# Leave the default kernel built.
+	$(MAKE) --no-print-directory iso
+
 .PHONY: smoke
 smoke: smoke-test ## Alias for smoke-test
 
