@@ -32,7 +32,7 @@ rustup override set nightly-2026-11-01-i686-unknown-linux-gnu
 Running `cargo --version` should now print:
 
 ```
-cargo 1.77.0-nightly (add15366e 2024-01-02)
+cargo 1.101.0-nightly (31d3246e0 2026-10-27)
 ```
 
 ## Install `i686-unknown-linux` Build Tools
