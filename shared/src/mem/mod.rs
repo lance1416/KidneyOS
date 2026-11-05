@@ -11,10 +11,8 @@ pub const HUGE_PAGE_SIZE: usize = 4 * MB;
 #[cfg(target_arch = "x86_64")]
 pub const HUGE_PAGE_SIZE: usize = 2 * MB;
 
-// The `phys` and `virt` linker symbols, `PHYS_MAP_OFFSET` and `USER_TOP` are
-// i686 only so far. On x86_64 the layout is only what
-// build-support/x86_64.ld and kernel/src/arch/x86_64/boot.s set up: the image
-// and physical 0..1GiB at `KERNEL_BASE`, with no direct map or user space yet.
+// The `phys` and `virt` linker symbols are i686 only; the x86_64 kernel
+// declares its own (see build-support/x86_64.ld).
 
 #[cfg(target_arch = "x86")]
 macro_rules! linker_offsets {
@@ -104,10 +102,25 @@ pub const KERNEL_BASE: usize = 0xFFFF_FFFF_8000_0000;
 #[cfg(target_arch = "x86")]
 pub const PHYS_MAP_OFFSET: usize = 0x8000_0000;
 
+/// On x86_64 the direct map starts at the beginning of the higher half (PML4
+/// entry 256) and covers all physical memory in the multiboot2 memory map.
+/// Until the kernel has its own page tables, the boot stub maps physical
+/// `0..1GiB` here.
+#[cfg(target_arch = "x86_64")]
+pub const PHYS_MAP_OFFSET: usize = 0xFFFF_8000_0000_0000;
+
 /// Exclusive upper bound of user virtual addresses. Any virtual address at or
 /// above it is a kernel address.
 #[cfg(target_arch = "x86")]
 pub const USER_TOP: usize = 0x8000_0000;
+
+/// On x86_64, user space is the lower canonical half. Checks of user pointers
+/// must compare against this first: addresses between it and the higher half
+/// are not canonical, and the page tables say nothing about them.
+#[cfg(target_arch = "x86_64")]
+pub const USER_TOP: usize = 0x0000_8000_0000_0000;
+#[cfg(target_arch = "x86_64")]
+const _: () = assert!(USER_TOP as u64 == crate::paging::x86_64::USER_TOP);
 
 // TODO: Figure out how to detect kernel stack overflows.
 pub const MAIN_STACK_SIZE: usize = 2 * MB;
