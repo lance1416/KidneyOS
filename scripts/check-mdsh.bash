@@ -2,10 +2,17 @@
 
 set -euo pipefail
 
-# pipefail ensures we fail if mdsh does, while the `grep ... || true` silences
-# some of the unnecessary output, without failing if there isn't any.
-find . -name '*.md' -print0 \
-  | xargs -0 dirname \
-  | sort -u \
-  | xargs -I '{}' sh -c 'cd {} && mdsh --frozen -i *.md' \
-  |& grep -Ev "^(Using input=|\[> )" || true
+# Check that every markdown file's mdsh-generated sections are up to date.
+# mdsh only accepts a single input file per invocation, and resolves includes
+# relative to the current directory, so run it from each file's directory.
+status=0
+while IFS= read -r -d '' file; do
+  # Only print mdsh's output if it fails, since it's noisy otherwise.
+  if ! output=$(cd "$(dirname "$file")" && mdsh --frozen -i "$(basename "$file")" 2>&1); then
+    echo "$output" >&2
+    echo "mdsh: $file is out of date; run 'mdsh -i $file' to update it." >&2
+    status=1
+  fi
+done < <(find . -path ./build -prune -o -path ./.git -prune -o -name '*.md' -print0)
+
+exit "$status"
