@@ -1,5 +1,6 @@
 {
-    "rust-analyzer.cargo.target": "x86_64-unknown-linux-gnu",
+    "rust-analyzer.cargo.target": "x86_64-unknown-none",
     "rust-analyzer.cargo.targetDir": "build/rust-analyzer",
+    "rust-analyzer.check.allTargets": false,
     "rust-analyzer.check.command": "clippy"
 }
