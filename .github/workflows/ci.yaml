@@ -1,54 +1,69 @@
 name: Run Checks and Deploy Docs
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Don't cancel runs on main, so every merged commit gets its docs deployed.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+permissions:
+  contents: read
 env:
   CARGO_TERM_COLOR: always
 jobs:
   checks:
     name: Check clippy, rustfmt, and tests; build ISO and docs
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Run every step inside the same devShell that developers use.
+        shell: nix develop ./nix#build -i -k CARGO_TERM_COLOR -c bash -euo pipefail {0}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v23
+    - name: Cache Nix store
+      uses: DeterminateSystems/magic-nix-cache-action@v15
+    - name: Enter devShell
+      id: devshell
+      run: rustc --version && cargo --version
+    - name: Check formatting
+      if: ${{ !cancelled() && steps.devshell.outcome == 'success' }}
+      run: find -name "*.rs" -print0 | xargs -0 rustfmt --quiet --check --edition 2024 --
+    # Restored after the formatting check, since build/target contains
+    # generated .rs files that rustfmt would otherwise pick up.
     - name: Cache cargo
-      uses: actions/cache@v3
+      uses: actions/cache@v6
       with:
-        key: ${{ runner.os }}-cargo-${{ hashFiles('./Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+        restore-keys: ${{ runner.os }}-cargo-
         path: |
-          ~/.cargo/bin/
           ~/.cargo/registry/index/
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
-          target/
-    - name: Cache nix
-      id: cache-nix
-      uses: mtoohey31/cache-flake-attrs@v2
-      with:
-        key: ${{ runner.os }}-nix-${{ hashFiles('nix/flake.lock', 'nix/flake.nix', 'rust-toolchain.toml') }}
-        flake_paths: ./nix#devShells.x86_64-linux.build
-    - name: Check formatting
-      if: ${{ !cancelled() && steps.cache-nix.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c sh -c 'find -name "*.rs" -print0 | xargs -0 rustfmt --quiet --check --edition 2024 --'
+          build/target/
     - name: Build test programs
       id: test-programs
-      if: ${{ !cancelled() && steps.cache-nix.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c make -f programs.mk
+      if: ${{ !cancelled() && steps.devshell.outcome == 'success' }}
+      run: make -f programs.mk
     - name: Check clippy
       if: ${{ !cancelled() && steps.test-programs.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c cargo-clippy -- --target i686-unknown-linux-gnu -- -Dwarnings
+      run: cargo-clippy -- --target i686-unknown-linux-gnu -- -Dwarnings
     - name: Run tests
       if: ${{ !cancelled() && steps.test-programs.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c make print-coverage
+      run: make print-coverage
     - name: Build ISO
       if: ${{ !cancelled() && steps.test-programs.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c make
+      run: make
     - name: Build Docs
       id: docs
-      if: ${{ !cancelled() && steps.cache-nix.outcome == 'success' }}
-      run: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop ./nix#build -i -k CARGO_TERM_COLOR -c make docs
+      if: ${{ !cancelled() && steps.devshell.outcome == 'success' }}
+      run: make docs
     - name: Upload Docs Artifact
-      if: ${{ !cancelled() && steps.docs.outcome == 'success' && github.ref-name == 'main' }}
-      uses: actions/upload-pages-artifact@v3
+      if: ${{ !cancelled() && steps.docs.outcome == 'success' && github.event_name == 'push' && github.ref_name == 'main' }}
+      uses: actions/upload-pages-artifact@v5
       with:
         path: build/docs
   deploy-docs:
@@ -59,9 +74,13 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: checks
-    if: ${{ github.ref-name == 'main' }}
+    if: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
     steps:
       - name: Deploy Docs to GitHub Pages
-        uses: actions/deploy-pages@v4
+        id: deployment
+        uses: actions/deploy-pages@v5
