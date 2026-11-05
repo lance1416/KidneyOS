@@ -9,8 +9,14 @@
 # features (negative_impls, slice_ptr_get, and btreemap_alloc in tests).
 # i586-unknown-linux-gnu is used for user programs, see programs/.cargo/config.toml.
 # x86_64-unknown-none is the target of the x86_64 kernel (`make ARCH=x86_64`),
-# which uses its prebuilt core and alloc instead of -Z build-std.
+# which uses its prebuilt core and alloc instead of -Z build-std, and
+# x86_64-unknown-linux-gnu is used to test it on the host (`make test-x86_64`).
 channel = "nightly-2026-11-01"
 components = ["clippy", "llvm-tools-preview", "rustfmt", "rust-analyzer", "rust-src"]
-targets = ["i686-unknown-linux-gnu", "i586-unknown-linux-gnu", "x86_64-unknown-none"]
+targets = [
+  "i686-unknown-linux-gnu",
+  "i586-unknown-linux-gnu",
+  "x86_64-unknown-none",
+  "x86_64-unknown-linux-gnu",
+]
 profile = "minimal"

@@ -42,3 +42,5 @@ make ARCH=x86_64 run-qemu-ng
 ```
 
 Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`). The x86_64 kernel boots into long mode, sets up its own descriptor tables and page tables, and then starts the same kernel as on i686: threads, the IDE driver (which reads `build/disk.img`), the root file system and the kernel shell. It doesn't run user programs yet. `make ARCH=x86_64 smoke-test` checks that it gets that far, and that the timer preempts threads. `make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
+
+`make test` runs the tests on both architectures (`make test-i686` and `make test-x86_64` run them on one).

@@ -127,6 +127,10 @@
           # a linker for the i686-unknown-linux-gnu tests.
           i686-pkgs = pkgs.pkgsCross.gnu32;
           i686-cc = i686-pkgs.stdenv.cc;
+          # The x86_64-unknown-linux-gnu tests run natively on x86_64-linux;
+          # elsewhere they need a cross linker and QEMU's user-mode emulation.
+          x86_64-native = system == "x86_64-linux";
+          x86_64-cc = pkgs.pkgsCross.gnu64.stdenv.cc;
           # grub-mkrescue needs the i386-pc GRUB modules. On x86_64-linux the
           # native GRUB package ships them; elsewhere we run the host's
           # grub-mkrescue but point it at the modules from a cross-built GRUB.
@@ -147,33 +151,40 @@
           # Changes to this are published to the builder image by
           # .github/workflows/container.yaml once they're merged. See
           # docs/building/docker.md#maintainers for details.
-          build = mkShell {
-            packages = [
-              actionlint
-              # scripts/check-mdsh.bash and CI's generated-files check use git.
-              git
-              gnumake
-              grcov
-              grub2
-              gzip
-              i686-cc
-              mdbook
-              mdsh
-              mtools
-              qemu
-              rust
-              shellcheck
-              xorriso
-              xz
-            ];
+          build = mkShell (
+            {
+              packages = [
+                actionlint
+                # scripts/check-mdsh.bash and CI's generated-files check use git.
+                git
+                gnumake
+                grcov
+                grub2
+                gzip
+                i686-cc
+                mdbook
+                mdsh
+                mtools
+                qemu
+                rust
+                shellcheck
+                xorriso
+                xz
+              ]
+              ++ pkgs.lib.optional (!x86_64-native) x86_64-cc;
 
-            CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER = "${i686-cc.targetPrefix}cc";
-            CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER = "${qemu}/bin/qemu-i386";
+              CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_LINKER = "${i686-cc.targetPrefix}cc";
+              CARGO_TARGET_I686_UNKNOWN_LINUX_GNU_RUNNER = "${qemu}/bin/qemu-i386";
 
-            shellHook = ''
-              export CARGO_TARGET_DIR="$PWD/build/target"
-            '';
-          };
+              shellHook = ''
+                export CARGO_TARGET_DIR="$PWD/build/target"
+              '';
+            }
+            // pkgs.lib.optionalAttrs (!x86_64-native) {
+              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "${x86_64-cc.targetPrefix}cc";
+              CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER = "${qemu}/bin/qemu-x86_64";
+            }
+          );
 
           default = self.devShells.${system}.build.overrideAttrs (oldAttrs: {
             nativeBuildInputs = oldAttrs.nativeBuildInputs ++ [

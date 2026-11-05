@@ -277,7 +277,12 @@ COVERAGE_STAMP := $(COVERAGE_DIR)/.tests-passed
 TEST_BINARY_DIR := $(CARGO_TARGET_DIR)/i686-unknown-linux-gnu/debug
 
 .PHONY: test
-test: $(PROGRAMS) ## Run the tests (with coverage instrumentation)
+test: test-i686 test-x86_64 ## Run the tests on both architectures
+
+# The rustflags are passed with --config rather than RUSTFLAGS so that they are
+# added to the ones in .cargo/config.toml instead of replacing them.
+.PHONY: test-i686
+test-i686: $(PROGRAMS) ## Run the tests on i686 (with coverage instrumentation)
 	rm -rf $(COVERAGE_DIR)
 	mkdir -p $(COVERAGE_DIR)
 	LLVM_PROFILE_FILE='$(COVERAGE_DIR)/%p-%m.profraw' cargo test \
@@ -286,7 +291,13 @@ test: $(PROGRAMS) ## Run the tests (with coverage instrumentation)
 	touch $(COVERAGE_STAMP)
 
 $(COVERAGE_STAMP):
-	$(MAKE) test
+	$(MAKE) test-i686
+
+# The trampoline and the syscall stubs are i686 only, and the user programs
+# aren't needed (the x86_64 kernel doesn't embed one).
+.PHONY: test-x86_64
+test-x86_64: ## Run the tests of the kernel and shared crates on x86_64
+	cargo test --target x86_64-unknown-linux-gnu --package kidneyos --package kidneyos-shared
 
 .PHONY: report-coverage
 report-coverage: $(COVERAGE_STAMP) ## Write an HTML coverage report to build/coverage/index.html

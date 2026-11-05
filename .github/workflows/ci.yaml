@@ -59,7 +59,7 @@ jobs:
         run: make programs
       - name: Run clippy on both workspaces
         run: make clippy
-      - name: Run the tests with coverage
+      - name: Run the tests (on i686 with coverage, and on x86_64)
         run: make test
       - name: Add the coverage summary to the job summary
         run: make -s coverage-summary >> "$GITHUB_STEP_SUMMARY"
