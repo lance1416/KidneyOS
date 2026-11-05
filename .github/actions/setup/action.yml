@@ -1,0 +1,36 @@
+name: Set up Nix, the devShell and cargo caches
+description: >-
+  Installs Nix with the Magic Nix Cache, builds the `build` devShell from
+  ./nix, and optionally restores the cargo caches for the kernel
+  (build/target) and user program (build/programs) workspaces. Run it after
+  actions/checkout.
+
+inputs:
+  rust-cache:
+    description: Restore (and at the end of the job, save) the cargo caches.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v23
+
+    - name: Use the Magic Nix Cache
+      uses: DeterminateSystems/magic-nix-cache-action@v15
+
+    # Building the devShell here keeps the time it takes out of the first real
+    # step. Its cargo and rustc are also put on PATH, so that rust-cache keys
+    # the cache on the pinned nightly rather than on the runner's stable Rust.
+    - name: Build the devShell
+      shell: bash
+      run: |
+        nix develop ./nix#build -c bash -c 'dirname "$(command -v cargo)" >> "$GITHUB_PATH"; rustc --version; cargo --version'
+
+    - name: Restore cargo caches
+      if: inputs.rust-cache == 'true'
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          . -> build/target
+          programs -> ../build/programs
