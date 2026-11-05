@@ -1,0 +1,15 @@
+# Cargo only reads this file when it is run from inside programs/ (config is
+# looked up from the current directory, not from --manifest-path), so
+# programs.mk always cd's here first.
+
+[build]
+# i586 rather than i686: i686-unknown-linux-gnu requires SSE2, which KidneyOS
+# doesn't enable (or save/restore) for user programs.
+target = "i586-unknown-linux-gnu"
+# Relative to programs/. The CARGO_TARGET_DIR environment variable (set by the
+# Makefile and the Nix devShell) takes precedence over this.
+target-dir = "../build/programs"
+
+[target.i586-unknown-linux-gnu]
+linker = "i686-unknown-linux-gnu-cc"
+rustflags = ["-C", "link-args=-e _start -static -nostartfiles"]

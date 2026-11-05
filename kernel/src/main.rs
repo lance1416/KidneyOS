@@ -60,7 +60,7 @@ fn panic(args: &core::panic::PanicInfo) -> ! {
 }
 
 const INIT: &[u8] =
-    include_bytes!("../../programs/pipes/target/i586-unknown-linux-gnu/release/pipes").as_slice();
+    include_bytes!("../../build/programs/i586-unknown-linux-gnu/release/pipes").as_slice();
 
 #[cfg_attr(not(test), unsafe(no_mangle))]
 extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lines: usize) -> ! {

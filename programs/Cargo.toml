@@ -1,0 +1,24 @@
+# User programs that run on KidneyOS. This is a separate workspace from the
+# kernel's (see the root Cargo.toml) because it is built for a different target,
+# i586-unknown-linux-gnu, configured in programs/.cargo/config.toml.
+#
+# Build with `make programs` from the repository root. Binaries end up in
+# build/programs/i586-unknown-linux-gnu/release/.
+[workspace]
+members = ["bss", "example_rust", "execve", "pipes", "waitpid"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+kidneyos-syscalls.path = "../syscalls"
+
+# Avoid eh_personality issues with these freestanding binaries.
+# https://os.phil-opp.com/freestanding-rust-binary/
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -4,8 +4,9 @@
 use core::ffi::c_char;
 use kidneyos_syscalls::O_CREATE;
 
+// Built first by programs.mk (see the execve rule there).
 const TARGET_PROGRAM: &[u8] =
-    include_bytes!("../../example_rust/target/i586-unknown-linux-gnu/release/example_rust");
+    include_bytes!("../../../build/programs/i586-unknown-linux-gnu/release/example_rust");
 
 const TARGET_PATH: *const c_char = c"/example_rust".as_ptr();
 
@@ -35,7 +36,10 @@ pub extern "C" fn _start() -> ! {
 
     kidneyos_syscalls::exit(result);
 
-    loop {}
+    // exit() doesn't return.
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 #[cfg(not(test))]

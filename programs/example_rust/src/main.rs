@@ -5,7 +5,10 @@
 pub extern "C" fn _start() -> ! {
     kidneyos_syscalls::exit(1);
 
-    loop {}
+    // exit() doesn't return.
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 #[cfg(not(test))]

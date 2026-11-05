@@ -1,5 +1,7 @@
 [workspace]
 members = ["kernel", "syscalls", "trampoline"]
+# User programs are a separate workspace, built for a different target.
+exclude = ["programs"]
 resolver = "2"
 
 [workspace.lints.clippy]
