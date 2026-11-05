@@ -7,20 +7,22 @@ use core::{arch::asm, ptr::NonNull};
 use kidneyos_shared::{
     global_descriptor_table,
     mem::{
-        KERNEL_BASE, PAGE_FRAME_SIZE,
+        KERNEL_BASE, PAGE_FRAME_SIZE, PHYS_MAP_OFFSET,
         phys::{
             kernel_end, main_stack_top, trampoline_data_start, trampoline_end, trampoline_heap_top,
             trampoline_start,
         },
         pool_allocator::PoolAllocator,
+        regions::{PhysRegion, largest_region},
     },
     paging::{self, PageManager, kernel_mapping_ranges},
     println,
+    sizes::MB,
     video_memory::{VIDEO_MEMORY_COLS, video_memory_writer},
 };
 use multiboot2::{
     EXPECTED_MAGIC,
-    info::{Info, InfoTag},
+    info::{Info, InfoTag, MEMORY_AVAILABLE},
 };
 
 #[cfg(target_os = "none")]
@@ -54,13 +56,32 @@ unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
             "invalid magic, expected {EXPECTED_MAGIC:#X}, got {magic:#X}"
         );
 
-        let mem_upper = (*multiboot2_info)
+        let memory_map = (*multiboot2_info)
             .iter()
             .find_map(|tag| match tag {
-                InfoTag::BasicMemoryInfo(t) => Some(t.mem_upper),
+                InfoTag::MemoryMap(t) => Some(t),
                 _ => None,
             })
-            .expect("Didn't find memory info!");
+            .expect("Didn't find memory map!");
+
+        // Only physical memory in upper memory (from 1MiB) that the kernel can
+        // reach through the direct map is usable.
+        let direct_map_end = (usize::MAX - PHYS_MAP_OFFSET) as u64 + 1;
+        let memory = largest_region(
+            memory_map
+                .entries()
+                .filter(|entry| entry.r#type == MEMORY_AVAILABLE)
+                .map(|entry| PhysRegion {
+                    start: entry.base_addr,
+                    end: entry.base_addr.saturating_add(entry.length),
+                }),
+            MB as u64,
+            direct_map_end,
+        )
+        .expect("No usable memory!");
+        let memory_start = usize::try_from(memory.start).expect("clamped to the direct map");
+        let memory_end = usize::try_from(memory.end).expect("clamped to the direct map");
+        println!("Usable memory: {memory_start:#X}..{memory_end:#X}");
 
         println!("Setting up GDTR");
         global_descriptor_table::load();
@@ -105,7 +126,7 @@ unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
         println!("Starting kernel...");
 
         unsafe extern "C" {
-            fn main(mem_upper: usize, video_memory_skip_lines: usize) -> !;
+            fn main(memory_start: usize, memory_end: usize, video_memory_skip_lines: usize) -> !;
         }
 
         asm!(
@@ -113,10 +134,12 @@ unsafe extern "C" fn trampoline(magic: usize, multiboot2_info: *mut Info) {
         add esp, {offset} // make stack a kernel virtual address
         push {}
         push {}
+        push {}
         call {}
         ",
             in(reg) video_memory_writer().cursor.div_ceil(VIDEO_MEMORY_COLS),
-            in(reg) mem_upper as usize,
+            in(reg) memory_end,
+            in(reg) memory_start,
             sym main,
             offset = const KERNEL_BASE,
             options(noreturn)

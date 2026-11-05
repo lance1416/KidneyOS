@@ -62,14 +62,14 @@ const INIT: &[u8] =
     include_bytes!("../../programs/pipes/target/i586-unknown-linux-gnu/release/pipes").as_slice();
 
 #[cfg_attr(not(test), unsafe(no_mangle))]
-extern "C" fn main(mem_upper: usize, video_memory_skip_lines: usize) -> ! {
+extern "C" fn main(memory_start: usize, memory_end: usize, video_memory_skip_lines: usize) -> ! {
     unsafe {
         video_memory_writer().skip_lines(video_memory_skip_lines);
     }
 
     // SAFETY: Single core, interrupts disabled.
     unsafe {
-        kernel_allocator().init(mem_upper);
+        kernel_allocator().init(memory_start..memory_end);
 
         println!("Setting up IDTR");
         idt::load();

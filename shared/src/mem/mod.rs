@@ -1,4 +1,5 @@
 pub mod pool_allocator;
+pub mod regions;
 
 use crate::sizes::{KB, MB};
 

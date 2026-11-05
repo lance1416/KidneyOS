@@ -12,15 +12,15 @@ use core::{
     alloc::{AllocError, GlobalAlloc, Layout},
     cell::UnsafeCell,
     mem::size_of,
+    ops::Range,
     ptr,
     ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use dummy_allocator::DummyAllocatorSolution;
 use frame_allocator::{CoreMapEntry, FrameAllocatorSolution, placement_algorithms::NextFit};
-use kidneyos_shared::{
-    mem::{BOOTSTRAP_ALLOCATOR_SIZE, PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, virt::trampoline_heap_top},
-    sizes::{KB, MB},
+use kidneyos_shared::mem::{
+    BOOTSTRAP_ALLOCATOR_SIZE, PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, virt::trampoline_heap_top,
 };
 use subblock_allocator::SubblockAllocatorSolution;
 
@@ -29,8 +29,6 @@ static TOTAL_NUM_ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 static TOTAL_NUM_DEALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
 
 const MAX_SUPPORTED_ALIGN: usize = 4096;
-/// "Upper memory" (as opposed to "lower memory") starts at 1MB.
-const UPPER_MEMORY_START: usize = MB + PHYS_MAP_OFFSET;
 
 trait FrameAllocator {
     /// Allocates "frames_requested" number of contiguous frames
@@ -87,23 +85,29 @@ impl KernelAllocator {
 
     /// Initialize the kernel allocator
     ///
-    /// "mem_upper" is the size of upper memory in kilobytes
+    /// "memory" is the range of physical memory available for frames, i.e.
+    /// the largest usable region from the bootloader's memory map. Memory used
+    /// by the kernel image, its stack and the bootstrap heap is excluded here.
     ///
     /// # Safety
     ///
     /// This function can only be called when the allocator is uninitialized.
-    pub unsafe fn init(&mut self, mem_upper: usize) {
+    pub unsafe fn init(&mut self, memory: Range<usize>) {
         let KernelAllocatorState::SetupState { dummy_allocator } = self.state.get_mut() else {
             // We can panic here because the kernel hasn't been initialized yet
             panic!("[PANIC]: init called while kernel allocator was already initialized");
         };
 
-        // The exclusive max address is given by multiplying the number of bytes
-        // in a KB by mem_upper, and adding this to UPPER_MEMORY_START.
-        let frames_ceil_address = UPPER_MEMORY_START.saturating_add(mem_upper * KB);
+        // The exclusive max address is the end of the region in the direct map.
+        let frames_ceil_address = PHYS_MAP_OFFSET.saturating_add(memory.end);
 
         // TODO: Do we still need to add the BOOTSTRAP_ALLOCATOR_SIZE
-        let frames_base_address = trampoline_heap_top() + BOOTSTRAP_ALLOCATOR_SIZE;
+        let frames_base_address = (trampoline_heap_top() + BOOTSTRAP_ALLOCATOR_SIZE)
+            .max(PHYS_MAP_OFFSET.saturating_add(memory.start));
+        assert!(
+            frames_base_address < frames_ceil_address,
+            "no usable memory after the kernel"
+        );
 
         // Check to see if dummy_allocator initialized properly (both start and end should be zero)
         let start = dummy_allocator.get_start_address();
