@@ -23,15 +23,19 @@ ifeq ($(ARCH),i686)
 KERNEL_TARGET := i686-unknown-kernel
 QEMU := qemu-system-i386
 OBJCOPY := $(CROSS_PREFIX)objcopy
-# What the smoke test waits for on the serial port: the shell prompt.
-SMOKE_EXPECT := kidney:/$$
+# What the smoke test waits for on the serial port (a list of quoted strings):
+# the shell prompt.
+SMOKE_EXPECT := 'kidney:/$$'
 else ifeq ($(ARCH),x86_64)
 KERNEL_TARGET := x86_64-unknown-none
 QEMU := qemu-system-x86_64
 # The i686 binutils can't be relied on to handle ELF64, so use the llvm-objcopy
 # of the llvm-tools component.
 OBJCOPY := $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc --print host-tuple)/bin/llvm-objcopy
-SMOKE_EXPECT := KidneyOS x86_64: hello
+# How many timer ticks (100 per second) the smoke test waits for; the kernel
+# reports every 100th.
+SMOKE_TICKS ?= 300
+SMOKE_EXPECT := 'KidneyOS x86_64: hello' 'tick $(SMOKE_TICKS)'
 else
 $(error Unhandled ARCH: $(ARCH) (expected i686 or x86_64))
 endif
@@ -204,10 +208,10 @@ run-qemu-ng-gdb: $(ISO) $(DISK) $(KERNEL_SYM) ## run-qemu-ng, paused until GDB a
 SMOKE_TIMEOUT ?= 120
 
 SMOKE_TEST := build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) $(BUILD_DIR)/smoke-test.log \
-	'$(SMOKE_EXPECT)' $(QEMU_FLAGS)
+	$(SMOKE_EXPECT) -- $(QEMU_FLAGS)
 
 .PHONY: smoke-test
-smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt (x86_64: the greeting)
+smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt (x86_64: timer ticks)
 	$(SMOKE_TEST)
 
 .PHONY: smoke

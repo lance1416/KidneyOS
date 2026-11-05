@@ -1,10 +1,11 @@
 //! The Rust entry point of the x86_64 kernel.
 
 use super::{
-    disable_interrupts, gdt, halt_forever, idt,
+    disable_interrupts, enable_interrupts, gdt, halt_forever, idt,
     paging::{self, phys_to_virt},
 };
-use core::panic::PanicInfo;
+use crate::interrupts::pic;
+use core::{arch::asm, panic::PanicInfo};
 use kidneyos_shared::{
     eprintln,
     mem::regions::PhysRegion,
@@ -13,6 +14,11 @@ use kidneyos_shared::{
     serial::serial_writer,
     video_memory::video_memory_writer,
 };
+
+/// Timer interrupts per second.
+const TIMER_HZ: u32 = 100;
+/// How many ticks apart kmain reports the tick count.
+const TICKS_PER_REPORT: u64 = 100;
 
 /// Called by `_start` in boot.s, in long mode, with the multiboot2 magic and
 /// the physical address of the multiboot2 boot information.
@@ -71,8 +77,25 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
     // else in use are in the kernel image.
     unsafe { paging::init_kernel_page_tables(&memory) };
 
-    // TODO(x86_64): Interrupts and the rest of the kernel.
-    halt_forever()
+    // SAFETY: Interrupts are still disabled, and the IDT handles every IRQ.
+    unsafe {
+        pic::pic_remap(pic::PIC1_OFFSET, pic::PIC2_OFFSET);
+        #[allow(clippy::cast_possible_truncation)]
+        pic::init_pit_with_reload((pic::PIT_INPUT_HZ / TIMER_HZ) as u16);
+    }
+    enable_interrupts();
+    println!("Interrupts enabled, timer at {TIMER_HZ}Hz");
+
+    let mut reported = 0;
+    loop {
+        // SAFETY: Waits for the next interrupt; interrupts are enabled.
+        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) };
+        let ticks = idt::ticks();
+        if ticks / TICKS_PER_REPORT > reported {
+            reported = ticks / TICKS_PER_REPORT;
+            println!("tick {}", reported * TICKS_PER_REPORT);
+        }
+    }
 }
 
 /// The physical memory the kernel image (including the boot stub) was loaded

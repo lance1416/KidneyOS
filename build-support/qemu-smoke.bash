@@ -1,24 +1,31 @@
 #!/usr/bin/env bash
 
 # Boots KidneyOS in QEMU without a display, with the serial port written to a
-# log file, and succeeds once EXPECTED (the shell prompt, or for x86_64 so far
-# its greeting) shows up in it.
+# log file, and succeeds once every EXPECTED string (e.g. the shell prompt)
+# shows up in it.
 #
-# Usage: build-support/qemu-smoke.bash QEMU TIMEOUT_SECONDS LOG_FILE EXPECTED QEMU_ARGS...
+# Usage: build-support/qemu-smoke.bash QEMU TIMEOUT_SECONDS LOG_FILE EXPECTED... -- QEMU_ARGS...
 # Run through `make smoke-test`, which supplies the arguments.
 
 set -euo pipefail
 
-if [[ $# -lt 4 ]]; then
-  echo "Usage: $0 QEMU TIMEOUT_SECONDS LOG_FILE EXPECTED QEMU_ARGS..." >&2
+usage() {
+  echo "Usage: $0 QEMU TIMEOUT_SECONDS LOG_FILE EXPECTED... -- QEMU_ARGS..." >&2
   exit 2
-fi
+}
 
+[[ $# -ge 5 ]] || usage
 qemu=$1
 timeout_seconds=$2
 log=$3
-expected=$4
-shift 4
+shift 3
+expected=()
+while [[ $# -gt 0 && $1 != -- ]]; do
+  expected+=("$1")
+  shift
+done
+[[ $# -gt 0 && ${#expected[@]} -gt 0 ]] || usage
+shift # --
 
 mkdir -p "$(dirname "$log")"
 : >"$log"
@@ -27,6 +34,18 @@ mkdir -p "$(dirname "$log")"
 qemu_pid=$!
 trap 'kill "$qemu_pid" 2>/dev/null || true' EXIT
 
+# Prints the expected strings that aren't in the log yet; succeeds if any.
+missing() {
+  local found=1 string
+  for string in "${expected[@]}"; do
+    if ! grep -qF -- "$string" "$log"; then
+      echo "'$string'"
+      found=0
+    fi
+  done
+  ((found == 0))
+}
+
 for ((i = 0; i < timeout_seconds; i++)); do
   # A panic (whose message contains "panicked at") or a failure in the
   # x86_64 boot stub won't get any further, so don't wait for the timeout.
@@ -34,12 +53,12 @@ for ((i = 0; i < timeout_seconds; i++)); do
     echo "KidneyOS panicked or failed to boot." >&2
     break
   fi
-  if grep -qF "$expected" "$log"; then
-    echo "Smoke test passed: reached '$expected' after ~${i}s."
+  if ! missing >/dev/null; then
+    echo "Smoke test passed: saw all ${#expected[@]} expected strings after ~${i}s."
     exit 0
   fi
   if ! kill -0 "$qemu_pid" 2>/dev/null; then
-    echo "QEMU exited before '$expected' appeared." >&2
+    echo "QEMU exited early." >&2
     break
   fi
   sleep 1
@@ -48,5 +67,5 @@ done
 echo "----- serial output ($log) -----" >&2
 cat "$log" >&2
 echo "--------------------------------" >&2
-echo "Smoke test failed: no '$expected' within ${timeout_seconds}s." >&2
+echo "Smoke test failed within ${timeout_seconds}s; missing: $(missing | tr '\n' ' ')" >&2
 exit 1

@@ -225,8 +225,12 @@ pub unsafe fn init() {
     }
 }
 
-/// The number of timer interrupts so far.
 static TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// The number of timer interrupts so far.
+pub fn ticks() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
 
 /// Called by `interrupt_common` for every interrupt, with interrupts disabled.
 extern "C" fn interrupt_dispatch(frame: &mut TrapFrame) {
