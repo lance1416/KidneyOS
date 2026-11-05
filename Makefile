@@ -253,9 +253,18 @@ check-fmt: ## Check formatting of all Rust code
 check-shellcheck: ## Run shellcheck on every shell script
 	@$(call need,shellcheck) echo shellcheck $(SHELL_SCRIPTS) && shellcheck $(SHELL_SCRIPTS)
 
+# mdsh versions disagree on details of their output (e.g. blank lines after an
+# include), so only the devShell's mdsh is used, through `nix develop` when
+# make isn't already running inside the devShell.
+ifdef IN_NIX_SHELL
+CHECK_MDSH := @$(call need,mdsh) scripts/check-mdsh.bash
+else
+CHECK_MDSH := @$(call need,nix) nix develop ./nix\#build -c scripts/check-mdsh.bash
+endif
+
 .PHONY: check-mdsh
-check-mdsh: ## Check that mdsh-generated sections of the docs are up to date
-	@$(call need,mdsh) scripts/check-mdsh.bash
+check-mdsh: ## Check the mdsh-generated sections of the docs with the devShell's mdsh
+	$(CHECK_MDSH)
 
 .PHONY: check-actionlint
 check-actionlint: ## Lint the GitHub Actions workflows
