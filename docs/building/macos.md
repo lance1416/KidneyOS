@@ -1,64 +1,36 @@
-# macOS (ARM)
+# macOS (Apple Silicon)
+
+> 💡 The easiest way to build KidneyOS on macOS is the [Docker](./docker.md) method: the builder image is available natively for Apple Silicon, so nothing has to be compiled or emulated. Follow these instructions instead if you'd rather have a native toolchain on your Mac.
+
+These instructions assume you have [Homebrew](https://brew.sh) installed. You should have already installed the Rust toolchain with rustup as described in the [previous section](./from-source.md#install-rust-toolchain).
 
 ## Install a Cross-Compiler
 
-Since KidneyOS is built for x86, in order to target the correct architecture during compilation, you need to use a [cross compiler](https://en.wikipedia.org/wiki/Cross_compiler).
-We suggest using [this one](https://github.com/messense/homebrew-macos-cross-toolchains) which can be installed using Homebrew.
+Since KidneyOS is built for 32-bit x86, you need a [cross compiler](https://en.wikipedia.org/wiki/Cross_compiler) that produces binaries for that architecture. The KidneyOS build expects tools prefixed with `i686-unknown-linux-gnu-` (e.g. `i686-unknown-linux-gnu-gcc`, `i686-unknown-linux-gnu-ld` and `i686-unknown-linux-gnu-objcopy`). We suggest the prebuilt toolchain from [messense/homebrew-macos-cross-toolchains](https://github.com/messense/homebrew-macos-cross-toolchains):
 
 ```sh
 brew tap messense/macos-cross-toolchains
 brew install i686-unknown-linux-gnu
 ```
 
-## Download Dependencies
+## Install GRUB and Other Tools
 
-There are no pre-built binaries of Grub 2 for ARM macOS so you will need to build it yourself.
-In order to do this, make sure the following dependencies are installed.
-
-```sh
-brew install objconv gawk # Required to build by grub
-brew install autoconf automake pkg-config
-brew install xorriso # Invoked to create the ISO
-```
-
-[//]: # (https://gist.github.com/emkay/a1214c753e8c975d95b4?permalink_comment_id=4612920#gistcomment-4612920)
-One final step before building is to alias `gawk` because the default `awk` in macOS doesn't work nicely with the grub installation scripts.
+Homebrew provides a prebuilt GRUB for i686, so you no longer need to build GRUB from source. Install it along with the other tools needed to build and run KidneyOS:
 
 ```sh
-alias awk=gawk
+brew install i686-elf-grub xorriso mtools qemu
 ```
 
-## Build and Install Grub
-The first step is to clone the grub repository.
+Homebrew installs GRUB's tools with an `i686-elf-` prefix, so tell the KidneyOS `Makefile` where to find `grub-mkrescue` by creating a file named `local.mk` in the root of the repository (it is ignored by Git) containing:
 
-```sh
-git clone git://git.savannah.gnu.org/grub.git
-cd grub
+```make
+GRUB_MKRESCUE := i686-elf-grub-mkrescue
 ```
 
-```sh
-./bootstrap # Configures some things.
-./autogen.sh
-```
+[Bochs](../useful-tools.md#bochs) is optional, and can be installed with `brew install bochs`.
 
-```sh
-mkdir build
-cd build
-../configure --disable-werror \
-    TARGET_CC=i686-unknown-linux-gnu-gcc \
-    TARGET_OBJCOPY=i686-unknown-linux-gnu-objcopy \
-    TARGET_STRIP=i686-unknown-linux-gnu-strip \
-    TARGET_NM=i686-unknown-linux-gnu-nm \
-    TARGET_RANLIB=i686-unknown-linux-gnu-ranlib \
-    --target=i686-unknown-linux-gnu
-```
+## Build and Run
 
-After this step, you should've successfully built grub.
-You *must* install grub, otherwise certain bootloader mod files will silently be excluded from your ISO and QEMU will give you CD ROM Code `0004` or `0009`.
-This writes the grub binaries to `/usr/local/bin` and requires root permissions.
+You should now be able to run `make` to build the ISO, and `make run-qemu` to run it.
 
-```sh
-sudo make install
-```
-
-You should now be able to directly run `make run-qemu` from your terminal!
+> ⚠️ `make test` doesn't work natively on macOS, since the tests are compiled for i686 Linux and run with QEMU's Linux user-mode emulation (`qemu-i386`), which isn't available on macOS. Use the [Docker](./docker.md) container if you need to run the tests.

@@ -6,6 +6,9 @@ PROJECT_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
 CARGO_TARGET_DIR ?= $(PROJECT_DIR)/build/target
 PROFILE ?= dev
+# Override in local.mk if your grub-mkrescue has a different name (e.g. Homebrew's
+# i686-elf-grub-mkrescue on macOS).
+GRUB_MKRESCUE ?= grub-mkrescue
 
 export CARGO_TARGET_DIR
 
@@ -86,7 +89,7 @@ build/isofiles/boot/grub/grub.cfg: build-support/grub.cfg
 	cp $< $@
 
 $(ISO): build/isofiles/boot/kernel.bin build/isofiles/boot/grub/grub.cfg
-	grub-mkrescue -o $@ build/isofiles
+	$(GRUB_MKRESCUE) -o $@ build/isofiles
 
 # Disk Image
 .PHONY: disk
