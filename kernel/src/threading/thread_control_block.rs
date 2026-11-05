@@ -175,7 +175,9 @@ impl ThreadControlBlock {
                     .expect("no more frames...")
                     .cast::<u8>()
                     .as_ptr();
-                let phys_addr = kernel_virt_addr.sub(OFFSET);
+                // Integer arithmetic: OFFSET is larger than isize::MAX, so
+                // `ptr::sub(OFFSET)` would be UB (and trips std's debug UB checks).
+                let phys_addr = kernel_virt_addr as usize - OFFSET;
 
                 // TODO: Throw an error if this range overlaps any previously mapped
                 // ranges, since `map_range` requires that the input range has not
@@ -184,7 +186,7 @@ impl ThreadControlBlock {
                 // Map the physical address obtained by the allocation above to the
                 // virtual address assigned by the ELF header.
                 page_manager.map_range(
-                    phys_addr as usize,
+                    phys_addr,
                     segment_virtual_start,
                     frames * PAGE_FRAME_SIZE,
                     program_header.writable,
