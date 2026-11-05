@@ -11,7 +11,7 @@ use core::ops::Range;
 use fat::Fat;
 // These are little-endian unaligned integer types
 use zerocopy::little_endian::{U16, U32};
-use zerocopy::{FromBytes, FromZeroes, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
 #[derive(Debug)]
 struct FatFileInfo {
@@ -58,7 +58,7 @@ enum FatType {
 // Base BPB (BIOS Parameter Block) for a FAT 16/32 filesystem
 #[repr(C)]
 #[allow(dead_code)]
-#[derive(FromZeroes, FromBytes, Unaligned)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 struct FatBaseHeader {
     jmp_boot: [u8; 3],
     oem_name: [u8; 8],
@@ -122,7 +122,7 @@ impl FatBaseHeader {
 
 #[repr(C)]
 #[allow(dead_code)]
-#[derive(FromZeroes, FromBytes, Unaligned)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 struct Fat16Header {
     base: FatBaseHeader,
     drive_num: u8,
@@ -137,7 +137,7 @@ struct Fat16Header {
 
 #[repr(C)]
 #[allow(dead_code)]
-#[derive(FromZeroes, FromBytes, Unaligned)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 struct Fat32Header {
     base: FatBaseHeader,
     fat_size: U32,
@@ -185,14 +185,14 @@ impl FatFS {
     pub fn new(mut block: Block) -> Result<Self> {
         let mut first_sector = [0; 512];
         block.read(0, &mut first_sector)?;
-        let fat16_header: &Fat16Header =
-            Fat16Header::ref_from(&first_sector).expect("Fat16Header type should be 512 bytes");
+        let fat16_header: &Fat16Header = Fat16Header::ref_from_bytes(&first_sector)
+            .expect("Fat16Header type should be 512 bytes");
         // NOTE: signature is in sample place in FAT-16 and -32.
         if fat16_header.signature_word != [0x55, 0xAA] {
             return error!("missing FAT signature in first sector");
         }
-        let fat32_header: &Fat32Header =
-            Fat32Header::ref_from(&first_sector).expect("Fat32Header type should be 512 bytes");
+        let fat32_header: &Fat32Header = Fat32Header::ref_from_bytes(&first_sector)
+            .expect("Fat32Header type should be 512 bytes");
         let base_header: &FatBaseHeader = &fat16_header.base;
         base_header.check_integrity()?;
         let reserved_sector_count: u32 = base_header.reserved_sector_count();

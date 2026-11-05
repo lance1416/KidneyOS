@@ -2,7 +2,7 @@ use crate::block::block_core::{BLOCK_SECTOR_SIZE, Block};
 use crate::fs::fat::{FatType, error};
 use crate::vfs::Result;
 use alloc::{collections::BTreeSet, vec, vec::Vec};
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 /// File Allocation Table
 ///
@@ -50,7 +50,7 @@ impl Fat {
         for (i, sector) in sectors.enumerate() {
             device.read(
                 sector,
-                data[i * (BLOCK_SECTOR_SIZE / 4)..(i + 1) * (BLOCK_SECTOR_SIZE / 4)].as_bytes_mut(),
+                data[i * (BLOCK_SECTOR_SIZE / 4)..(i + 1) * (BLOCK_SECTOR_SIZE / 4)].as_mut_bytes(),
             )?;
         }
 

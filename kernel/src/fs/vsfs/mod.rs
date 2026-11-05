@@ -4,7 +4,7 @@ use crate::vfs::{
 };
 use alloc::{string::String, vec, vec::Vec};
 use core::cmp::{max, min};
-use zerocopy::{FromBytes, FromZeroes};
+use zerocopy::FromBytes;
 #[allow(clippy::module_inception)]
 pub mod vsfs;
 use vsfs::{Bitmap, SuperBlock};
@@ -29,14 +29,14 @@ pub const VSFS_INODE_TABLE_BLOCK: u32 = 3;
 pub const VSFS_INODE_SIZE: usize = 64; // same inode size as the vsfs disk images
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, Copy, FromBytes)]
 pub struct Timespec {
     tv_sec: i64,  // seconds since the Epoch
     tv_nsec: i64, // nanoseconds
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, Copy, FromBytes)]
 pub struct Inode {
     mode: u32,                                // File type and permissions.
     n_links: u32,                             // Number of hard links.
@@ -160,9 +160,10 @@ impl VSFS {
                 if inode_bitmap
                     .is_allocated((i - VSFS_INODE_TABLE_BLOCK) * inode_ratio as u32 + k as u32)
                 {
-                    inode =
-                        Inode::read_from(&buffer[k * VSFS_INODE_SIZE..(k + 1) * VSFS_INODE_SIZE])
-                            .unwrap();
+                    inode = Inode::read_from_bytes(
+                        &buffer[k * VSFS_INODE_SIZE..(k + 1) * VSFS_INODE_SIZE],
+                    )
+                    .unwrap();
                     // inode.mode = u32::from_le_bytes(
                     //     buffer[k * VSFS_INODE_SIZE..k * VSFS_INODE_SIZE + 4]
                     //         .try_into()

@@ -4,10 +4,10 @@ use crate::vfs::{FileInfo, INodeNum, INodeType, Result};
 use alloc::{string::String, vec, vec::Vec};
 use core::ops::ControlFlow;
 use zerocopy::little_endian::{U16, U32};
-use zerocopy::{FromBytes, FromZeroes, Unaligned};
+use zerocopy::{FromBytes, Immutable, KnownLayout, Unaligned};
 
 #[repr(C)]
-#[derive(FromZeroes, FromBytes, Unaligned)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 struct FatDirEntry {
     name: [u8; 11],
     attr: u8,
@@ -24,7 +24,7 @@ struct FatDirEntry {
 }
 
 #[repr(C)]
-#[derive(FromZeroes, FromBytes, Unaligned)]
+#[derive(FromBytes, KnownLayout, Immutable, Unaligned)]
 struct FatDirEntryLongName {
     ord: u8,
     name1: [u8; 10],
@@ -57,7 +57,7 @@ struct Directory {
 
 impl Directory {
     fn read_one_entry(&mut self, bytes: &[u8]) -> Result<ControlFlow<()>> {
-        let entry: &FatDirEntry = FatDirEntry::ref_from(bytes).unwrap();
+        let entry: &FatDirEntry = FatDirEntry::ref_from_bytes(bytes).unwrap();
         let attr = entry.attr;
         if bytes[0] == 0 {
             // this entry is free, and all entries following it are free.
@@ -66,7 +66,7 @@ impl Directory {
             // this entry is free, but there may be more entries after it.
         } else if attr == ATTR_LONG_NAME {
             // a "long name" entry (stores part of a file name)
-            let entry: &FatDirEntryLongName = FatDirEntryLongName::ref_from(bytes).unwrap();
+            let entry: &FatDirEntryLongName = FatDirEntryLongName::ref_from_bytes(bytes).unwrap();
             // Oddly, the "long name" entries are stored in reverse.
             // So we reverse each entry, then reverse the whole thing at the end.
             for c in entry.name3.chunks(2).rev() {
