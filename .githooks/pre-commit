@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
 
+# Installed by `make hooks`. Runs the quick checks (`make check-fast`); CI runs
+# the full `make check`. Skip with `git commit --no-verify` if you must.
+
 set -euo pipefail
 
-# Prevent accidental commits of disk images.
-if git diff --cached --name-only | grep -q '\.img$'; then
-  echo "WARNING: You are about to commit a disk image."
-  echo "If you are sure you want to do this, use 'git commit --no-verify'."
+# Prevent accidental commits of disk images and other large files. Only added
+# or modified files are checked, so deleting one is fine.
+max_bytes=$((1024 * 1024))
+status=0
+while IFS= read -r -d '' file; do
+  case "$file" in
+    *.img | *.disk | *.iso)
+      echo "error: $file is an uncompressed disk image; commit a compressed copy (e.g. $file.gz) instead." >&2
+      status=1
+      continue
+      ;;
+  esac
+  size=$(git cat-file -s ":$file")
+  if ((size > max_bytes)); then
+    echo "error: $file is $size bytes (more than $max_bytes)." >&2
+    status=1
+  fi
+done < <(git diff --cached --name-only --diff-filter=AM -z)
+if ((status != 0)); then
+  echo "If you are sure you want to commit these files, use 'git commit --no-verify'." >&2
   exit 1
 fi
 
-make -f programs.mk
-cargo clippy --target i686-unknown-linux-gnu -- -D warnings
-cargo fmt -- --quiet --check
-
-# Skipping either of thse checks is OK if the tool isn't installed.
-if command -v mdsh >/dev/null; then
-  scripts/check-mdsh.bash
-fi
-if command -v shellcheck >/dev/null; then
-  shellcheck .githooks/pre-commit scripts/*sh
-fi
+make --no-print-directory check-fast

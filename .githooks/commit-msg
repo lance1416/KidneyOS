@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+# Installed by `make hooks`. Enforces the commit message format described in
+# CONTRIBUTING.md: a single Conventional Commits subject line, with no body and
+# no trailers (such as Signed-off-by or Co-Authored-By).
+
+set -euo pipefail
+
+message_file=$1
+types='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
+max_length=72
+
+# Ignore comment lines and everything below the scissors line that
+# `git commit -v` adds, like git does, plus trailing whitespace.
+comment_char=$(git config --get core.commentChar || true)
+case "$comment_char" in
+  '' | auto) comment_char='#' ;;
+esac
+lines=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  if [[ "$line" == "$comment_char ------------------------ >8 ------------------------" ]]; then
+    break
+  fi
+  [[ "$line" == "$comment_char"* ]] && continue
+  lines+=("${line%"${line##*[![:space:]]}"}")
+done <"$message_file"
+
+# Drop leading and trailing blank lines.
+while ((${#lines[@]} > 0)) && [[ -z "${lines[0]}" ]]; do lines=("${lines[@]:1}"); done
+while ((${#lines[@]} > 0)) && [[ -z "${lines[${#lines[@]} - 1]}" ]]; do unset 'lines[${#lines[@]}-1]'; done
+
+fail() {
+  echo "commit-msg: $1" >&2
+  echo "Expected a single line like 'fix(make): always rebuild user programs'," >&2
+  echo "with a type from: ${types//|/, }. See CONTRIBUTING.md." >&2
+  exit 1
+}
+
+((${#lines[@]} > 0)) || fail "the commit message is empty."
+subject=${lines[0]}
+
+# Leave messages that git itself generates alone, as well as fixup!/squash!
+# commits, which are squashed into another commit before they're merged.
+generated='^(Merge |Revert "|fixup! |squash! |amend! )'
+if [[ "$subject" =~ $generated ]]; then
+  exit 0
+fi
+
+((${#lines[@]} == 1)) || fail "the message must be a single subject line, with no body or trailers."
+((${#subject} <= max_length)) || fail "the subject is ${#subject} characters long (max $max_length)."
+conventional="^($types)(\\([a-z0-9][a-z0-9._/-]*\\))?!?: [^[:space:]]"
+[[ "$subject" =~ $conventional ]] ||
+  fail "'$subject' is not a Conventional Commits subject."
+[[ "$subject" != *. ]] || fail "the subject should not end with a period."
