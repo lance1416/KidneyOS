@@ -203,7 +203,7 @@ pub unsafe fn init_kernel_page_tables(memory: &PhysicalMemory) {
 
     let direct_map_size = memory.direct_map.total_len();
     let direct_map_end = memory.direct_map.as_slice().last().map_or(0, |r| r.end);
-    let identity_mapped = pages.is_mapped(0x10_0000);
+    let identity_mapped = pages.is_mapped(0x10_0000_u64);
 
     // SAFETY: Everything in use is in the kernel image or the direct map, at
     // the same addresses as before.

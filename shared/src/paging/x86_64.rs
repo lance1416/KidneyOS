@@ -4,7 +4,9 @@
 //!
 //! This module is built on every target so that it can be unit tested on the
 //! 32-bit test host; only [`PageManager::load`] and [`PageManager::is_loaded`]
-//! touch the CPU, and they only exist in the x86_64 kernel. For the same reason, addresses are `u64` rather than `usize`.
+//! touch the CPU: they only exist on x86_64 (where the host tests mustn't
+//! call them), and dropping only checks that the page tables aren't loaded in
+//! the kernel. For the same reason, addresses are `u64` rather than `usize`.
 //!
 //! The API mirrors the i686 `PageManager`. The differences:
 //!
@@ -15,6 +17,10 @@
 //! - Huge pages are 2MiB, and need both addresses to be 2MiB aligned.
 //! - [`PageManager::can_access`] rejects user accesses at or above [`USER_TOP`]
 //!   and non-canonical addresses before looking at the page tables.
+//! - Address spaces share the kernel's half (PML4 entries 256..512) with the
+//!   kernel's page tables, see [`PageManager::share_kernel_half`].
+//!
+//! Addresses can be passed as `u64` or `usize` (see [`Address`]).
 
 use core::{
     alloc::{Allocator, Layout},
@@ -30,6 +36,25 @@ pub const HUGE_PAGE_SIZE: u64 = 0x20_0000;
 pub const USER_TOP: u64 = 0x0000_8000_0000_0000;
 
 const ENTRIES: usize = 512;
+/// The PML4 entries of the kernel's half of the address space.
+const KERNEL_HALF: core::ops::Range<usize> = 256..512;
+
+/// An address: `u64`, or `usize` (which is at most 64 bits wide).
+pub trait Address: Copy {
+    fn to_u64(self) -> u64;
+}
+
+impl Address for u64 {
+    fn to_u64(self) -> u64 {
+        self
+    }
+}
+
+impl Address for usize {
+    fn to_u64(self) -> u64 {
+        self as u64
+    }
+}
 const TABLE_LAYOUT: Layout = Layout::new::<PageTable>();
 
 /// Whether `addr` is canonical, i.e. bits 63..47 are all equal. Using a
@@ -156,6 +181,9 @@ pub struct PageManager<A: Allocator> {
     root: NonNull<PageTable>,
     alloc: A,
     phys_to_alloc_addr_offset: usize,
+    /// Whether the kernel half's tables belong to another PageManager, and so
+    /// must not be freed or changed through this one.
+    shares_kernel_half: bool,
 }
 
 impl<A: Allocator> PageManager<A> {
@@ -164,6 +192,7 @@ impl<A: Allocator> PageManager<A> {
             root: NonNull::dangling(),
             alloc,
             phys_to_alloc_addr_offset,
+            shares_kernel_half: false,
         };
         res.root = res.allocate_table();
         res
@@ -196,13 +225,13 @@ impl<A: Allocator> PageManager<A> {
     /// Swapping from the previously loaded page tables to these must not cause
     /// any existing pointers (including the stack, the code being run and the
     /// descriptor tables) to refer to anything they shouldn't.
-    #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+    #[cfg(target_arch = "x86_64")]
     pub unsafe fn load(&self) {
         unsafe { core::arch::asm!("mov cr3, {}", in(reg) self.root_phys(), options(nostack)) };
     }
 
     /// Returns whether these page tables are loaded.
-    #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+    #[cfg(target_arch = "x86_64")]
     pub fn is_loaded(&self) -> bool {
         let cr3: u64;
         unsafe { core::arch::asm!("mov {}, cr3", out(reg) cr3, options(nomem, nostack)) };
@@ -218,7 +247,13 @@ impl<A: Allocator> PageManager<A> {
     /// Adding this mapping must not cause any existing pointers to refer to
     /// anything they shouldn't. If these page tables are loaded, the caller is
     /// responsible for the TLB.
-    pub unsafe fn map(&mut self, phys_addr: u64, virt_addr: u64, write: bool, user: bool) {
+    pub unsafe fn map(
+        &mut self,
+        phys_addr: impl Address,
+        virt_addr: impl Address,
+        write: bool,
+        user: bool,
+    ) {
         unsafe { self.map_flags(phys_addr, virt_addr, PageFlags::w_xor_x(write, user)) };
     }
 
@@ -227,10 +262,16 @@ impl<A: Allocator> PageManager<A> {
     /// # Safety
     ///
     /// Same as `map`.
-    pub unsafe fn map_flags(&mut self, phys_addr: u64, virt_addr: u64, flags: PageFlags) {
+    pub unsafe fn map_flags(
+        &mut self,
+        phys_addr: impl Address,
+        virt_addr: impl Address,
+        flags: PageFlags,
+    ) {
+        let (phys_addr, virt_addr) = (phys_addr.to_u64(), virt_addr.to_u64());
         assert_eq!(phys_addr % PAGE_SIZE, 0, "phys_addr was not page-aligned");
         assert_eq!(virt_addr % PAGE_SIZE, 0, "virt_addr was not page-aligned");
-        let [l4, l3, l2, l1] = Self::checked_indices(virt_addr);
+        let [l4, l3, l2, l1] = self.checked_indices(virt_addr);
 
         let pdpt = self.next_table(self.root, l4, flags, virt_addr);
         let pd = self.next_table(pdpt, l3, flags, virt_addr);
@@ -251,7 +292,13 @@ impl<A: Allocator> PageManager<A> {
     /// # Safety
     ///
     /// Same as `map`.
-    pub unsafe fn huge_map(&mut self, phys_addr: u64, virt_addr: u64, write: bool, user: bool) {
+    pub unsafe fn huge_map(
+        &mut self,
+        phys_addr: impl Address,
+        virt_addr: impl Address,
+        write: bool,
+        user: bool,
+    ) {
         unsafe { self.huge_map_flags(phys_addr, virt_addr, PageFlags::w_xor_x(write, user)) };
     }
 
@@ -260,7 +307,13 @@ impl<A: Allocator> PageManager<A> {
     /// # Safety
     ///
     /// Same as `map`.
-    pub unsafe fn huge_map_flags(&mut self, phys_addr: u64, virt_addr: u64, flags: PageFlags) {
+    pub unsafe fn huge_map_flags(
+        &mut self,
+        phys_addr: impl Address,
+        virt_addr: impl Address,
+        flags: PageFlags,
+    ) {
+        let (phys_addr, virt_addr) = (phys_addr.to_u64(), virt_addr.to_u64());
         assert_eq!(
             phys_addr % HUGE_PAGE_SIZE,
             0,
@@ -271,7 +324,7 @@ impl<A: Allocator> PageManager<A> {
             0,
             "virt_addr was not huge-page-aligned"
         );
-        let [l4, l3, l2, _] = Self::checked_indices(virt_addr);
+        let [l4, l3, l2, _] = self.checked_indices(virt_addr);
 
         let pdpt = self.next_table(self.root, l4, flags, virt_addr);
         let pd = self.next_table(pdpt, l3, flags, virt_addr);
@@ -294,9 +347,9 @@ impl<A: Allocator> PageManager<A> {
     /// Same as `map`.
     pub unsafe fn map_range(
         &mut self,
-        phys_start: u64,
-        virt_start: u64,
-        len: u64,
+        phys_start: impl Address,
+        virt_start: impl Address,
+        len: impl Address,
         write: bool,
         user: bool,
     ) {
@@ -312,11 +365,13 @@ impl<A: Allocator> PageManager<A> {
     /// Same as `map`.
     pub unsafe fn map_range_flags(
         &mut self,
-        phys_start: u64,
-        virt_start: u64,
-        len: u64,
+        phys_start: impl Address,
+        virt_start: impl Address,
+        len: impl Address,
         flags: PageFlags,
     ) {
+        let (phys_start, virt_start, len) =
+            (phys_start.to_u64(), virt_start.to_u64(), len.to_u64());
         assert_eq!(phys_start % PAGE_SIZE, 0, "phys_start was not page-aligned");
         assert_eq!(virt_start % PAGE_SIZE, 0, "virt_start was not page-aligned");
         assert_eq!(len % PAGE_SIZE, 0, "len was not a multiple of PAGE_SIZE");
@@ -344,12 +399,65 @@ impl<A: Allocator> PageManager<A> {
     /// # Safety
     ///
     /// Same as `map`.
-    pub unsafe fn id_map_range(&mut self, start: u64, len: u64, write: bool, user: bool) {
+    pub unsafe fn id_map_range(
+        &mut self,
+        start: impl Address,
+        len: impl Address,
+        write: bool,
+        user: bool,
+    ) {
         unsafe { self.map_range(start, start, len, write, user) };
     }
 
+    /// Makes the kernel half of this address space (PML4 entries 256..512) the
+    /// same as `kernel`'s, by pointing to the same page tables. Mappings that
+    /// `kernel` later adds below those entries are seen here too; for that,
+    /// `kernel` should have all of them (see
+    /// [`allocate_kernel_half`](Self::allocate_kernel_half)). Nothing can be
+    /// mapped in the kernel half through this PageManager afterwards.
+    ///
+    /// # Safety
+    ///
+    /// `kernel`'s page tables must outlive this PageManager.
+    pub unsafe fn share_kernel_half<B: Allocator>(&mut self, kernel: &PageManager<B>) {
+        assert_eq!(
+            self.phys_to_alloc_addr_offset, kernel.phys_to_alloc_addr_offset,
+            "page tables accessed at different offsets"
+        );
+        // SAFETY: Page tables are only reachable through their PageManagers,
+        // and the kernel's are only read.
+        unsafe {
+            let ours = &mut (*self.root.as_ptr()).0;
+            let theirs = &(*kernel.root.as_ptr()).0;
+            for index in KERNEL_HALF {
+                assert!(!ours[index].present(), "kernel half already in use");
+                ours[index] = theirs[index];
+            }
+        }
+        self.shares_kernel_half = true;
+    }
+
+    /// Gives every PML4 entry of the kernel half a table, so that address
+    /// spaces that [share](Self::share_kernel_half) it see everything mapped
+    /// there later.
+    pub fn allocate_kernel_half(&mut self) {
+        assert!(
+            !self.shares_kernel_half,
+            "the kernel half belongs to another PageManager"
+        );
+        let flags = PageFlags {
+            write: true,
+            user: false,
+            exec: true,
+        };
+        for index in KERNEL_HALF {
+            self.next_table(self.root, index, flags, 0);
+        }
+    }
+
     /// Walks the page tables for `virt`, like the MMU does.
-    pub fn translate(&self, virt: u64) -> Option<Translation> {
+    pub fn translate(&self, virt: impl Address) -> Option<Translation> {
+        let virt = virt.to_u64();
         if !is_canonical(virt) {
             return None;
         }
@@ -391,7 +499,8 @@ impl<A: Allocator> PageManager<A> {
     /// writes if `write = true`. If `user = true`, the access must also be
     /// allowed from user mode, which is never the case at or above
     /// [`USER_TOP`] (whatever the page tables say).
-    pub fn can_access(&self, pointer: u64, write: bool, user: bool) -> bool {
+    pub fn can_access(&self, pointer: impl Address, write: bool, user: bool) -> bool {
+        let pointer = pointer.to_u64();
         if user && pointer >= USER_TOP {
             return false;
         }
@@ -401,7 +510,14 @@ impl<A: Allocator> PageManager<A> {
 
     /// Returns whether all of `pointer..pointer + count` is accessible, like
     /// [`can_access`](Self::can_access).
-    pub fn can_access_range(&self, pointer: u64, count: u64, write: bool, user: bool) -> bool {
+    pub fn can_access_range(
+        &self,
+        pointer: impl Address,
+        count: impl Address,
+        write: bool,
+        user: bool,
+    ) -> bool {
+        let (pointer, count) = (pointer.to_u64(), count.to_u64());
         let Some(end) = pointer.checked_add(count) else {
             return false;
         };
@@ -420,31 +536,36 @@ impl<A: Allocator> PageManager<A> {
     }
 
     /// Returns true if `pointer` is mapped.
-    pub fn is_mapped(&self, pointer: u64) -> bool {
+    pub fn is_mapped(&self, pointer: impl Address) -> bool {
         self.can_access(pointer, false, false)
     }
 
     /// Returns true if `count` bytes from `pointer` are mapped.
-    pub fn is_range_mapped(&self, pointer: u64, count: u64) -> bool {
+    pub fn is_range_mapped(&self, pointer: impl Address, count: impl Address) -> bool {
         self.can_access_range(pointer, count, false, false)
     }
 
     /// Returns true if `pointer` is writeable.
-    pub fn is_writeable(&self, pointer: u64) -> bool {
+    pub fn is_writeable(&self, pointer: impl Address) -> bool {
         self.can_access(pointer, true, false)
     }
 
     /// Returns true if `count` bytes from `pointer` are writeable.
-    pub fn is_range_writeable(&self, pointer: u64, count: u64) -> bool {
+    pub fn is_range_writeable(&self, pointer: impl Address, count: impl Address) -> bool {
         self.can_access_range(pointer, count, true, false)
     }
 
-    fn checked_indices(virt: u64) -> [usize; 4] {
+    fn checked_indices(&self, virt: u64) -> [usize; 4] {
         assert!(
             is_canonical(virt),
             "virtual address {virt:#X} is not canonical"
         );
-        indices(virt)
+        let indices = indices(virt);
+        assert!(
+            !(self.shares_kernel_half && KERNEL_HALF.contains(&indices[0])),
+            "virtual address {virt:#X} is in the shared kernel half"
+        );
+        indices
     }
 
     fn allocate_table(&mut self) -> NonNull<PageTable> {
@@ -505,6 +626,9 @@ impl<A: Allocator> PageManager<A> {
     fn free_table(&mut self, table: NonNull<PageTable>, level: u8) {
         if level > 1 {
             for index in 0..ENTRIES {
+                if level == 4 && self.shares_kernel_half && KERNEL_HALF.contains(&index) {
+                    continue;
+                }
                 // SAFETY: Page tables are only reachable through this PageManager.
                 let entry = unsafe { (*table.as_ptr()).0[index] };
                 if entry.present() && !entry.huge() {
@@ -553,7 +677,7 @@ mod tests {
     use super::*;
     use std::alloc::Global;
 
-    const KERNEL_HALF: u64 = 0xFFFF_8000_0000_0000;
+    const KERNEL_HALF: u64 = 0xFFFF_8000_0000_0000_u64;
     const MB: u64 = 1 << 20;
 
     // Physical addresses are host addresses here (offset 0), so the tables
@@ -571,7 +695,7 @@ mod tests {
         assert!(is_canonical(0));
         assert!(is_canonical(USER_TOP - 1));
         assert!(!is_canonical(USER_TOP));
-        assert!(!is_canonical(0xFFFF_7FFF_FFFF_FFFF));
+        assert!(!is_canonical(0xFFFF_7FFF_FFFF_FFFF_u64));
         assert!(is_canonical(KERNEL_HALF));
         assert!(is_canonical(u64::MAX));
     }
@@ -580,12 +704,12 @@ mod tests {
     fn map_and_translate_in_both_halves() {
         let mut pm = page_manager();
         unsafe {
-            pm.map(0x5000, 0x40_0000, false, true);
-            pm.map(0x6000, KERNEL_HALF + 0x1234_5000, true, false);
+            pm.map(0x5000_u64, 0x40_0000_u64, false, true);
+            pm.map(0x6000_u64, KERNEL_HALF + 0x1234_5000_u64, true, false);
         }
 
-        let user = pm.translate(0x40_0123).expect("mapped");
-        assert_eq!(user.phys, 0x5123);
+        let user = pm.translate(0x40_0123_u64).expect("mapped");
+        assert_eq!(user.phys, 0x5123_u64);
         assert_eq!(
             user.flags,
             PageFlags {
@@ -596,8 +720,8 @@ mod tests {
         );
         assert!(!user.huge);
 
-        let kernel = pm.translate(KERNEL_HALF + 0x1234_5FFF).expect("mapped");
-        assert_eq!(kernel.phys, 0x6FFF);
+        let kernel = pm.translate(KERNEL_HALF + 0x1234_5FFF_u64).expect("mapped");
+        assert_eq!(kernel.phys, 0x6FFF_u64);
         assert_eq!(
             kernel.flags,
             PageFlags {
@@ -607,18 +731,18 @@ mod tests {
             }
         );
 
-        assert_eq!(pm.translate(0x40_1000), None);
+        assert_eq!(pm.translate(0x40_1000_u64), None);
         assert_eq!(pm.translate(KERNEL_HALF), None);
     }
 
     #[test]
     fn huge_pages() {
         let mut pm = page_manager();
-        unsafe { pm.huge_map(0x4000_0000, KERNEL_HALF + 0x20_0000, true, false) };
-        let t = pm.translate(KERNEL_HALF + 0x3F_FFFF).expect("mapped");
-        assert_eq!(t.phys, 0x401F_FFFF);
+        unsafe { pm.huge_map(0x4000_0000_u64, KERNEL_HALF + 0x20_0000_u64, true, false) };
+        let t = pm.translate(KERNEL_HALF + 0x3F_FFFF_u64).expect("mapped");
+        assert_eq!(t.phys, 0x401F_FFFF_u64);
         assert!(t.huge);
-        assert_eq!(pm.translate(KERNEL_HALF + 0x40_0000), None);
+        assert_eq!(pm.translate(KERNEL_HALF + 0x40_0000_u64), None);
     }
 
     #[test]
@@ -635,11 +759,11 @@ mod tests {
         assert_eq!(pm.translate(KERNEL_HALF + 5 * MB), None);
 
         // Misaligned physical addresses can't use huge pages.
-        unsafe { pm.map_range(0x1000, 2 * MB, 2 * MB, true, false) };
+        unsafe { pm.map_range(0x1000_u64, 2 * MB, 2 * MB, true, false) };
         assert!(!pm.translate(2 * MB).expect("mapped").huge);
         assert_eq!(
             pm.translate(4 * MB - 1).expect("mapped").phys,
-            2 * MB + 0xFFF
+            2 * MB + 0xFFF_u64
         );
     }
 
@@ -648,8 +772,8 @@ mod tests {
     fn double_map_panics() {
         let mut pm = page_manager();
         unsafe {
-            pm.map(0x1000, 0x40_0000, true, false);
-            pm.map(0x2000, 0x40_0000, true, false);
+            pm.map(0x1000_u64, 0x40_0000_u64, true, false);
+            pm.map(0x2000_u64, 0x40_0000_u64, true, false);
         }
     }
 
@@ -658,8 +782,8 @@ mod tests {
     fn mapping_inside_a_huge_page_panics() {
         let mut pm = page_manager();
         unsafe {
-            pm.huge_map(0, 0x20_0000, true, false);
-            pm.map(0x1000, 0x20_1000, true, false);
+            pm.huge_map(0_u64, 0x20_0000_u64, true, false);
+            pm.map(0x1000_u64, 0x20_1000_u64, true, false);
         }
     }
 
@@ -667,7 +791,7 @@ mod tests {
     #[should_panic(expected = "not canonical")]
     fn mapping_non_canonical_address_panics() {
         let mut pm = page_manager();
-        unsafe { pm.map(0x1000, USER_TOP, true, true) };
+        unsafe { pm.map(0x1000_u64, USER_TOP, true, true) };
     }
 
     #[test]
@@ -676,39 +800,39 @@ mod tests {
         unsafe {
             // Shares all upper levels with the writable page below.
             pm.map_flags(
-                0x1000,
-                0x40_0000,
+                0x1000_u64,
+                0x40_0000_u64,
                 PageFlags {
                     write: false,
                     user: true,
                     exec: true,
                 },
             );
-            pm.map_flags(0x2000, 0x40_1000, rw(true));
+            pm.map_flags(0x2000_u64, 0x40_1000_u64, rw(true));
         }
-        assert!(pm.can_access(0x40_0000, false, true));
+        assert!(pm.can_access(0x40_0000_u64, false, true));
         assert!(
-            !pm.can_access(0x40_0000, true, true),
+            !pm.can_access(0x40_0000_u64, true, true),
             "upgrading the upper levels doesn't leak"
         );
-        assert!(pm.can_access(0x40_1000, true, true));
-        assert!(pm.translate(0x40_0000).expect("mapped").flags.exec);
-        assert!(!pm.translate(0x40_1000).expect("mapped").flags.exec);
+        assert!(pm.can_access(0x40_1000_u64, true, true));
+        assert!(pm.translate(0x40_0000_u64).expect("mapped").flags.exec);
+        assert!(!pm.translate(0x40_1000_u64).expect("mapped").flags.exec);
     }
 
     #[test]
     fn user_access_requires_user_bit() {
         let mut pm = page_manager();
         unsafe {
-            pm.map(0x1000, 0x40_0000, true, false);
-            pm.map(0x2000, 0x40_1000, false, true);
+            pm.map(0x1000_u64, 0x40_0000_u64, true, false);
+            pm.map(0x2000_u64, 0x40_1000_u64, false, true);
         }
-        assert!(pm.can_access(0x40_0000, true, false));
-        assert!(!pm.can_access(0x40_0000, false, true));
-        assert!(pm.can_access(0x40_1000, false, true));
-        assert!(!pm.can_access(0x40_1000, true, true));
-        assert!(!pm.can_access_range(0x40_0FF0, 0x20, false, true));
-        assert!(pm.can_access_range(0x40_0FF0, 0x20, false, false));
+        assert!(pm.can_access(0x40_0000_u64, true, false));
+        assert!(!pm.can_access(0x40_0000_u64, false, true));
+        assert!(pm.can_access(0x40_1000_u64, false, true));
+        assert!(!pm.can_access(0x40_1000_u64, true, true));
+        assert!(!pm.can_access_range(0x40_0FF0_u64, 0x20_u64, false, true));
+        assert!(pm.can_access_range(0x40_0FF0_u64, 0x20_u64, false, false));
     }
 
     #[test]
@@ -716,20 +840,20 @@ mod tests {
         let mut pm = page_manager();
         // Even if (wrongly) mapped for user mode, kernel-half addresses are
         // never accessible from user mode.
-        unsafe { pm.map(0x1000, KERNEL_HALF, true, true) };
+        unsafe { pm.map(0x1000_u64, KERNEL_HALF, true, true) };
         assert!(pm.can_access(KERNEL_HALF, true, false));
         assert!(!pm.can_access(KERNEL_HALF, false, true));
 
         // Non-canonical addresses are not accessible at all.
         assert!(!pm.can_access(USER_TOP, false, false));
-        assert!(!pm.can_access(0x1234_5678_9ABC_DEF0, false, false));
+        assert!(!pm.can_access(0x1234_5678_9ABC_DEF0_u64, false, false));
 
         // Ranges ending past USER_TOP or wrapping around are rejected.
-        unsafe { pm.map(0x2000, USER_TOP - PAGE_SIZE, true, true) };
+        unsafe { pm.map(0x2000_u64, USER_TOP - PAGE_SIZE, true, true) };
         assert!(pm.can_access_range(USER_TOP - PAGE_SIZE, PAGE_SIZE, true, true));
         assert!(!pm.can_access_range(USER_TOP - PAGE_SIZE, PAGE_SIZE + 1, false, true));
-        assert!(!pm.can_access_range(u64::MAX - 0xF, 0x20, false, false));
-        assert!(pm.can_access_range(USER_TOP - 8, 0, false, true));
+        assert!(!pm.can_access_range(u64::MAX - 0xF_u64, 0x20_u64, false, false));
+        assert!(pm.can_access_range(USER_TOP - 8, 0_u64, false, true));
     }
 
     #[test]
@@ -737,16 +861,16 @@ mod tests {
         let pm = PageManager::from_mapping_ranges_in(
             [
                 MappingRange {
-                    phys_start: 0x10_0000,
-                    virt_start: KERNEL_HALF + 0x10_0000,
-                    len: 0x2000,
+                    phys_start: 0x10_0000_u64,
+                    virt_start: KERNEL_HALF + 0x10_0000_u64,
+                    len: 0x2000_u64,
                     write: false,
                     user: false,
                     exec: true,
                 },
                 MappingRange {
                     phys_start: 0,
-                    virt_start: 0x4000_0000,
+                    virt_start: 0x4000_0000_u64,
                     len: 4 * MB,
                     write: true,
                     user: false,
@@ -757,12 +881,59 @@ mod tests {
             0,
         );
         assert!(
-            pm.translate(KERNEL_HALF + 0x10_1000)
+            pm.translate(KERNEL_HALF + 0x10_1000_u64)
                 .expect("mapped")
                 .flags
                 .exec
         );
-        assert!(pm.is_range_writeable(0x4000_0000, 4 * MB));
-        assert!(!pm.is_mapped(0x4000_0000 + 4 * MB));
+        assert!(pm.is_range_writeable(0x4000_0000_u64, 4 * MB));
+        assert!(!pm.is_mapped(0x4000_0000_u64 + 4 * MB));
+    }
+
+    #[test]
+    fn sharing_the_kernel_half() {
+        let mut kernel = page_manager();
+        kernel.allocate_kernel_half();
+        unsafe { kernel.map(0x1000_u64, KERNEL_HALF, true, false) };
+
+        let mut user = page_manager();
+        unsafe {
+            user.share_kernel_half(&kernel);
+            user.map(0x2000_u64, 0x40_0000_u64, true, true);
+        }
+        assert_eq!(user.translate(KERNEL_HALF).map(|t| t.phys), Some(0x1000));
+        assert_eq!(
+            kernel.translate(0x40_0000_u64),
+            None,
+            "user halves are separate"
+        );
+
+        // Mapped in the kernel's page tables after sharing: seen by both.
+        unsafe { kernel.map(0x3000_u64, u64::MAX - 0xFFF, false, false) };
+        assert_eq!(user.translate(u64::MAX).map(|t| t.phys), Some(0x3FFF));
+
+        // Dropping the user address space leaves the kernel's tables alone.
+        drop(user);
+        assert_eq!(kernel.translate(KERNEL_HALF).map(|t| t.phys), Some(0x1000));
+    }
+
+    #[test]
+    #[should_panic(expected = "shared kernel half")]
+    fn mapping_into_a_shared_kernel_half_panics() {
+        let mut kernel = page_manager();
+        kernel.allocate_kernel_half();
+        let mut user = page_manager();
+        unsafe {
+            user.share_kernel_half(&kernel);
+            user.map(0x1000_u64, KERNEL_HALF, true, false);
+        }
+    }
+
+    #[test]
+    fn usize_addresses() {
+        let mut pm = page_manager();
+        unsafe { pm.map(0x1000_usize, 0x40_0000_usize, true, true) };
+        assert!(pm.can_access_range(0x40_0000_usize, 0x1000_usize, true, true));
+        assert!(!pm.can_access(0x40_1000_usize, false, false));
     }
 }
