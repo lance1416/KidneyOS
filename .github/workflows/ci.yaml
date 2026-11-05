@@ -1,8 +1,8 @@
 # Every job only orchestrates: the work itself is done by make targets, so
-# `make check` (plus `make smoke-test smoke-programs`, `make docs` and
-# `make ARCH=x86_64 clippy iso smoke-test smoke-programs`, with and without
-# KIDNEYOS_TEST=pagefault) locally runs the same checks as this workflow.
-# Setup shared by the jobs is in .github/actions/setup.
+# `make check` (plus `make smoke-test smoke-programs`,
+# `make KIDNEYOS_TEST=pagefault smoke-test` and `make docs`) locally runs the
+# same checks as this workflow. Setup shared by the jobs is in
+# .github/actions/setup.
 name: CI
 
 on:
@@ -59,76 +59,46 @@ jobs:
         run: make programs
       - name: Run clippy on both workspaces
         run: make clippy
-      - name: Run the tests (on i686 with coverage, and on x86_64)
+      - name: Run the tests with coverage
         run: make test
       - name: Add the coverage summary to the job summary
         run: make -s coverage-summary >> "$GITHUB_STEP_SUMMARY"
       - name: Build the ISO
         run: make iso
-      # Rebuilds the kernel with other init programs (and then the default
-      # one again).
-      - name: Run the user programs and check their results
-        run: make smoke-programs
       - name: Check that generated files are committed
         run: git diff --exit-code
       - name: Upload the ISO
         uses: actions/upload-artifact@v7
         with:
           name: kidneyos-iso
-          path: build/i686/kidneyos.iso
+          path: build/kidneyos.iso
           if-no-files-found: error
           retention-days: 7
 
   smoke:
-    name: Boot the ISO in QEMU
+    name: Boot in QEMU
     needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Check out the repository
-        uses: actions/checkout@v7
-      - name: Set up Nix and the devShell
-        uses: ./.github/actions/setup
-        with:
-          rust-cache: "false"
-      - name: Download the ISO
-        uses: actions/download-artifact@v8
-        with:
-          name: kidneyos-iso
-          path: build/i686
-      - name: Boot and wait for the shell prompt
-        run: make smoke-test-iso
-
-  # The x86_64 port (`make ARCH=x86_64`), built and booted next to the i686
-  # kernel until it replaces it. Independent of the i686 jobs, and not required
-  # for deploying the docs.
-  x86_64:
-    name: Build and boot the x86_64 port
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
+      # The cargo caches are for the tests below that rebuild the kernel.
       - name: Set up Nix, the devShell and cargo caches
         uses: ./.github/actions/setup
-      - name: Run clippy on the x86_64 kernel
-        run: make ARCH=x86_64 clippy
-      - name: Build the x86_64 ISO
-        run: make ARCH=x86_64 iso
-      - name: Boot it and wait for init and the shell
-        run: make ARCH=x86_64 smoke-test
-      - name: Upload the ISO
-        uses: actions/upload-artifact@v7
+      - name: Download the ISO
+        uses: actions/download-artifact@v8
         with:
-          name: kidneyos-x86_64-iso
-          path: build/x86_64/kidneyos.iso
-          if-no-files-found: error
-          retention-days: 7
-      # Rebuilds the kernel (and the ISO), so it runs after the upload.
-      - name: Check that page faults are handled
-        run: make ARCH=x86_64 KIDNEYOS_TEST=pagefault smoke-test
+          name: kidneyos-iso
+          path: build
+      - name: Boot the ISO and wait for init and the shell prompt
+        run: make smoke-test-iso
+      # These rebuild the kernel with other init programs, and with a page
+      # fault on purpose.
       - name: Run the user programs and check their results
-        run: make ARCH=x86_64 smoke-programs
+        run: make smoke-programs
+      - name: Check that page faults are handled
+        run: make KIDNEYOS_TEST=pagefault smoke-test
 
   docs:
     name: Build the docs
