@@ -1,4 +1,4 @@
-PROGRAMS := exit example_c example_rust fs execve pipes
+PROGRAMS := exit example_c example_rust fs execve pipes syscall_abi
 
 .PHONY: programs
 programs: $(PROGRAMS)
@@ -7,6 +7,9 @@ programs: $(PROGRAMS)
 
 exit:
 	cd programs/exit && make
+
+syscall_abi:
+	cd programs/syscall_abi && make
 
 example_c:
 	cd programs/example_c && make
@@ -29,6 +32,7 @@ pipes:
 .PHONY: clean
 clean::
 	cd programs/exit && make clean
+	cd programs/syscall_abi && make clean
 	cd programs/example_c && make clean
 	# We don't want to export CARGO_TARGET_DIR to our destination make.
 	unset CARGO_TARGET_DIR && cd programs/example_rust && make clean

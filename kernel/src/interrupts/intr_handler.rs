@@ -82,22 +82,28 @@ pub unsafe extern "C" fn general_protection_fault_handler() -> ! {
 pub unsafe extern "C" fn syscall_handler() -> ! {
     core::arch::naked_asm!(
         "
+        // Syscall ABI: eax holds the syscall number on entry and the return
+        // value on exit; ebx, ecx and edx hold the arguments. Every register
+        // other than eax is preserved, so no kernel values leak back to the
+        // program through the caller-saved registers of the C ABI.
+        pushad
+        // The C ABI requires the direction flag to be clear on function entry.
+        cld
+
         // Push arguments to stack.
         push edx
         push ecx
         push ebx
         push eax
 
-        // TODO: We need to define what our syscall ABI is allowed to clobber
-        // and what it must preserve, then actually do that. We should also
-        // investigate what actual OSs do to ensure that we're not leaking
-        // sensitive kernel data, even if we are respecting our ABI.
-
         call {}
-        // eax will contain the handler's return value, which is where it should
-        // remain when we return to the program.
 
         add esp, 16 // Drop arguments from stack.
+
+        // Overwrite the saved eax (the last of the 8 registers pushed by
+        // pushad, so at the highest address) with the return value.
+        mov [esp + 28], eax
+        popad
 
         iretd
         ",

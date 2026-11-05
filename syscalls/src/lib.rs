@@ -18,11 +18,10 @@ pub use defs::*;
 pub extern "C" fn exit(code: i32) {
     unsafe {
         asm!(
-            "
-            mov eax, 0x1
-            int 0x80
-            ",
+            "int 0x80",
+            in("eax") SYS_EXIT,
             in("ebx") code,
+            options(noreturn),
         );
     }
 }
