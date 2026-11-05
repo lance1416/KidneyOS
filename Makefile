@@ -153,9 +153,18 @@ run-qemu-ng-gdb: $(ISO) $(DISK) build/kernel.sym ## run-qemu-ng, paused until GD
 
 SMOKE_TIMEOUT ?= 120
 
+SMOKE_TEST := build-support/qemu-smoke.bash $(SMOKE_TIMEOUT) build/smoke-test.log $(QEMU_FLAGS)
+
 .PHONY: smoke-test
 smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt
-	build-support/qemu-smoke.bash $(SMOKE_TIMEOUT) build/smoke-test.log $(QEMU_FLAGS)
+	$(SMOKE_TEST)
+
+# For an ISO that was built elsewhere (CI downloads it from the build job), so
+# make doesn't try to rebuild it.
+.PHONY: smoke-test-iso
+smoke-test-iso: $(DISK) ## Like smoke-test, but boot the existing build/kidneyos.iso as is
+	@test -f $(ISO) || { echo "$(ISO) does not exist; run 'make iso' first." >&2; exit 1; }
+	$(SMOKE_TEST)
 
 # Bochs' display library. The X11 debugger GUI is only available on Linux;
 # elsewhere Bochs' default is used.
@@ -212,6 +221,12 @@ $(COVERAGE_DIR)/coverage.md: $(COVERAGE_STAMP)
 print-coverage: $(COVERAGE_DIR)/coverage.md ## Print the total test coverage
 	tail -n 1 $<
 
+.PHONY: coverage-summary
+coverage-summary: $(COVERAGE_DIR)/coverage.md ## Print a Markdown coverage summary (use with make -s)
+	@echo '### Test coverage'
+	@echo
+	@tail -n 1 $<
+
 # Checks
 
 # $(call need,TOOL): a recipe prefix that skips the rest of the line with a
@@ -256,6 +271,13 @@ check-fast: check-fmt check-shellcheck check-mdsh check-actionlint ## Quick chec
 
 .PHONY: check
 check: check-fast programs clippy test iso ## Everything CI checks: check-fast, clippy, tests and the ISO
+
+# The commits a pull request adds; CI sets this to the PR's base..head.
+COMMIT_RANGE ?= origin/main..HEAD
+
+.PHONY: check-commits
+check-commits: ## Check the messages of the commits in COMMIT_RANGE (default origin/main..HEAD)
+	build-support/check-commit-messages.bash '$(COMMIT_RANGE)'
 
 .PHONY: hooks
 hooks: ## Use the git hooks in .githooks (pre-commit and commit-msg)
