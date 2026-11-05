@@ -24,7 +24,7 @@ Alternatively, you can use the [official installer](https://nixos.org/download).
 Clone the repository and `cd` into the resulting directory. (Depending on how your instructor wants you to submit your work, they may have given you an alternate repository URL. If so, use that URL instead of the one below.)
 
 ```sh
-git clone https://github.com/KidneyOS/KidneyOS
+git clone https://github.com/lance1416/KidneyOS
 cd KidneyOS
 ```
 

@@ -8,7 +8,7 @@ build-dir = "../build/docs"
 create-missing = true
 
 [rust]
-edition = "2021"
+edition = "2024"
 
 [output.html]
-git-repository-url = "https://github.com/KidneyOS/KidneyOS/tree/main/docs"
+git-repository-url = "https://github.com/lance1416/KidneyOS/tree/main/docs"
