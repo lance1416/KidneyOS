@@ -10,6 +10,13 @@ target = "i686-unknown-linux-gnu"
 [target.i686-unknown-linux-gnu]
 linker = "i686-unknown-linux-gnu-cc"
 
+# The x86_64 kernel (`make ARCH=x86_64`). The built-in target defaults to a
+# static PIE; the kernel is linked at a fixed address (build-support/x86_64.ld),
+# so it uses the static relocation model. Frame pointers are kept for
+# backtraces, like in build-support/i686-unknown-kernel.json.
+[target.x86_64-unknown-none]
+rustflags = ["-C", "relocation-model=static", "-C", "force-frame-pointers=yes"]
+
 [alias]
 # Lint the kernel workspace like `make clippy` does (the user programs need
 # `make clippy`, since they're a separate workspace).

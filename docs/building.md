@@ -18,7 +18,7 @@ Once you have a build environment ready, simply run:
 make
 ```
 
-...from within your build environment, at the root of the KidneyOS repository. This will compile the various pieces of KidneyOS, and produce an ISO at `build/kidneyos.iso`.
+...from within your build environment, at the root of the KidneyOS repository. This will compile the various pieces of KidneyOS, and produce an ISO at `build/i686/kidneyos.iso`.
 
 ## Running KidneyOS
 
@@ -32,3 +32,13 @@ There are two things to note here:
 
 1. If you're building KidneyOS with Docker, this command should be run on the host system, not in the container build environment.
 2. If you're building KidneyOS with any of the other methods, you don't have to run `make` first after modifying the source code. `make run-qemu` will also automatically rebuild the ISO if any of the KidneyOS source files have changed.
+
+## Building for x86_64
+
+KidneyOS is being ported from i686 to x86_64. i686 is still the default; to build and run the x86_64 kernel instead, add `ARCH=x86_64` to any of the commands above:
+
+```sh
+make ARCH=x86_64 run-qemu-ng
+```
+
+Its outputs go to `build/x86_64/` (the i686 ones to `build/i686/`). So far the x86_64 kernel only boots into long mode, prints a greeting and the amount of available memory on the screen and the serial port, and halts. `make ARCH=x86_64 smoke-test` checks that it gets that far.

@@ -8,7 +8,9 @@
 # Nightly is still required for -Z build-std and the remaining unstable library
 # features (negative_impls, slice_ptr_get, and btreemap_alloc in tests).
 # i586-unknown-linux-gnu is used for user programs, see programs/.cargo/config.toml.
+# x86_64-unknown-none is the target of the x86_64 kernel (`make ARCH=x86_64`),
+# which uses its prebuilt core and alloc instead of -Z build-std.
 channel = "nightly-2026-11-01"
 components = ["clippy", "llvm-tools-preview", "rustfmt", "rust-analyzer", "rust-src"]
-targets = ["i686-unknown-linux-gnu", "i586-unknown-linux-gnu"]
+targets = ["i686-unknown-linux-gnu", "i586-unknown-linux-gnu", "x86_64-unknown-none"]
 profile = "minimal"

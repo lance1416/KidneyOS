@@ -7,7 +7,7 @@
 ata0: enabled=1, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
 ata0-master: type=disk, path="build/disk.img", mode=flat, cylinders=100, heads=16, spt=63
 ata1: enabled=1, ioaddr1=0x170, ioaddr2=0x370, irq=15
-ata1-master: type=cdrom, path="build/kidneyos.iso", status=inserted
+ata1-master: type=cdrom, path="build/i686/kidneyos.iso", status=inserted
 boot: cdrom
 mouse: enabled=0
 sound: driver=dummy

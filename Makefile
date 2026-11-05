@@ -8,6 +8,9 @@ PROJECT_DIR := $(patsubst %/,%,$(dir $(realpath $(lastword $(MAKEFILE_LIST)))))
 
 CARGO_TARGET_DIR ?= $(PROJECT_DIR)/build/target
 PROFILE ?= dev
+# The architecture to build the kernel for: i686, or x86_64 while the port to it
+# is in progress (so far it only boots; see kernel/src/arch/x86_64).
+ARCH ?= i686
 # Prefix of the i686 cross binutils and gcc.
 CROSS_PREFIX ?= i686-unknown-linux-gnu-
 # Override in local.mk if your grub-mkrescue has a different name (e.g. Homebrew's
@@ -16,19 +19,39 @@ GRUB_MKRESCUE ?= grub-mkrescue
 
 export CARGO_TARGET_DIR
 
+ifeq ($(ARCH),i686)
+KERNEL_TARGET := i686-unknown-kernel
+QEMU := qemu-system-i386
+OBJCOPY := $(CROSS_PREFIX)objcopy
+else ifeq ($(ARCH),x86_64)
+KERNEL_TARGET := x86_64-unknown-none
+QEMU := qemu-system-x86_64
+# The i686 binutils can't be relied on to handle ELF64, so use the llvm-objcopy
+# of the llvm-tools component.
+OBJCOPY := $(shell rustc --print sysroot)/lib/rustlib/$(shell rustc --print host-tuple)/bin/llvm-objcopy
+else
+$(error Unhandled ARCH: $(ARCH) (expected i686 or x86_64))
+endif
+
 ifeq ($(PROFILE),dev)
-ARTIFACT_DIR := $(CARGO_TARGET_DIR)/i686-unknown-kernel/debug
+ARTIFACT_DIR := $(CARGO_TARGET_DIR)/$(KERNEL_TARGET)/debug
 else ifeq ($(PROFILE),release)
-ARTIFACT_DIR := $(CARGO_TARGET_DIR)/i686-unknown-kernel/release
+ARTIFACT_DIR := $(CARGO_TARGET_DIR)/$(KERNEL_TARGET)/release
 else
 $(error Unhandled profile: $(PROFILE))
 endif
 
+# Everything built for one architecture (except by cargo, which already keeps
+# targets apart) goes here.
+BUILD_DIR := build/$(ARCH)
+
 RAW_KERNEL := $(ARTIFACT_DIR)/kidneyos
 RAW_TRAMPOLINE := $(ARTIFACT_DIR)/libkidneyos_trampoline.a
-TRAMPOLINE_DIR := build/trampoline
+TRAMPOLINE_DIR := $(BUILD_DIR)/trampoline
 TRAMPOLINE := $(TRAMPOLINE_DIR)/libkidneyos_trampoline.a
-ISO := build/kidneyos.iso
+ISOFILES := $(BUILD_DIR)/isofiles
+KERNEL_SYM := $(BUILD_DIR)/kernel.sym
+ISO := $(BUILD_DIR)/kidneyos.iso
 # The disk QEMU and Bochs attach. It is unpacked from the compressed copy in
 # build-support/ on first use, and then kept, so that changes made to it by
 # KidneyOS persist across runs. `make reset-disk` restores the original.
@@ -44,12 +67,15 @@ help: ## Show this help
 	@awk 'BEGIN { FS = ":.*## " } /^[a-zA-Z0-9_.-]+:.*## / { printf "  %-18s %s\n", $$1, $$2 }' \
 	    $(MAKEFILE_LIST)
 	@echo
-	@echo 'Variables: PROFILE=dev|release, QEMU_DEBUG=<qemu -d items>, BOCHS_DISPLAY=<bochs display_library>'
+	@echo 'Variables: ARCH=i686|x86_64, PROFILE=dev|release, QEMU_DEBUG=<qemu -d items>,'
+	@echo '           BOCHS_DISPLAY=<bochs display_library>'
 
 .PHONY: iso
-iso: $(ISO) ## Build the bootable ISO (build/kidneyos.iso); the default target
+iso: $(ISO) ## Build the bootable ISO (build/ARCH/kidneyos.iso); the default target
 
 # Rust Builds
+
+ifeq ($(ARCH),i686)
 
 $(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/i686.ld $(TRAMPOLINE) $(PROGRAMS) \
 		$(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
@@ -76,6 +102,26 @@ $(RAW_TRAMPOLINE): trampoline/Cargo.toml Cargo.lock \
 	  -Z build-std=core \
 	  -Z build-std-features=compiler-builtins-mem
 
+else ifeq ($(ARCH),x86_64)
+
+# The built-in target is already freestanding, soft-float, without a red zone and
+# uses the kernel code model, and core and alloc come prebuilt for it; the
+# rustflags in .cargo/config.toml link it at a fixed address rather than as a
+# static PIE. The boot stub is part of the kernel, so there is no trampoline.
+$(RAW_KERNEL): kernel/Cargo.toml Cargo.lock build-support/x86_64.ld \
+		$(call cargo-deps,$(ARTIFACT_DIR)/kidneyos.d)
+	cargo rustc \
+	  --bin kidneyos \
+	  --manifest-path $< \
+	  --profile $(PROFILE) \
+	  --target x86_64-unknown-none \
+	  -- \
+	  -C link-arg=-T -C link-arg=build-support/x86_64.ld \
+	  -C link-arg=-z -C link-arg=max-page-size=0x1000 \
+	  -C link-arg=-n
+
+endif
+
 # Trampoline Post-Build
 
 $(TRAMPOLINE_DIR)/libkidneyos_trampoline: $(RAW_TRAMPOLINE)
@@ -95,19 +141,20 @@ $(TRAMPOLINE): $(TRAMPOLINE_DIR)/libkidneyos_trampoline.o
 
 # Kernel Post-Build
 
-build/isofiles/boot/kernel.bin: $(RAW_KERNEL)
-	mkdir -p build/isofiles/boot
-	$(CROSS_PREFIX)objcopy --strip-debug $< $@
+$(ISOFILES)/boot/kernel.bin: $(RAW_KERNEL)
+	mkdir -p $(dir $@)
+	$(OBJCOPY) --strip-debug $< $@
 
-build/kernel.sym: $(RAW_KERNEL)
-	$(CROSS_PREFIX)objcopy --only-keep-debug $< $@
+$(KERNEL_SYM): $(RAW_KERNEL)
+	mkdir -p $(dir $@)
+	$(OBJCOPY) --only-keep-debug $< $@
 
-build/isofiles/boot/grub/grub.cfg: build-support/grub.cfg
-	mkdir -p build/isofiles/boot/grub
+$(ISOFILES)/boot/grub/grub.cfg: build-support/grub-$(ARCH).cfg
+	mkdir -p $(dir $@)
 	cp $< $@
 
-$(ISO): build/isofiles/boot/kernel.bin build/isofiles/boot/grub/grub.cfg
-	$(GRUB_MKRESCUE) -o $@ build/isofiles
+$(ISO): $(ISOFILES)/boot/kernel.bin $(ISOFILES)/boot/grub/grub.cfg
+	$(GRUB_MKRESCUE) -o $@ $(ISOFILES)
 
 # Disk Image
 
@@ -125,7 +172,7 @@ reset-disk: ## Discard changes to build/disk.img by unpacking it again
 
 # Set to a comma-separated list of QEMU log items to have QEMU print them, e.g.
 # `make run-qemu QEMU_DEBUG=int,mmu,pcall,cpu_reset,guest_errors`. See
-# `qemu-system-i386 -d help` for the full list.
+# `$(QEMU) -d help` for the full list.
 QEMU_DEBUG ?=
 QEMU_FLAGS := -no-reboot -no-shutdown -m 4G -cdrom $(ISO) \
 	-drive format=raw,file=$(DISK),if=ide \
@@ -135,25 +182,25 @@ QEMU_FLAGS := -no-reboot -no-shutdown -m 4G -cdrom $(ISO) \
 
 .PHONY: run-qemu
 run-qemu: $(ISO) $(DISK) ## Run KidneyOS in QEMU
-	qemu-system-i386 $(QEMU_FLAGS)
+	$(QEMU) $(QEMU_FLAGS)
 
 .PHONY: run-qemu-gdb
-run-qemu-gdb: $(ISO) $(DISK) build/kernel.sym ## Run in QEMU, paused until GDB attaches on :1234
-	qemu-system-i386 -s -S $(QEMU_FLAGS)
+run-qemu-gdb: $(ISO) $(DISK) $(KERNEL_SYM) ## Run in QEMU, paused until GDB attaches on :1234
+	$(QEMU) -s -S $(QEMU_FLAGS)
 
 .PHONY: run-qemu-ng
 run-qemu-ng: $(ISO) $(DISK) ## Run in QEMU without a display (serial on the terminal)
 	# NOTE: You can quit with Ctrl-A X
-	qemu-system-i386 -nographic $(QEMU_FLAGS)
+	$(QEMU) -nographic $(QEMU_FLAGS)
 
 .PHONY: run-qemu-ng-gdb
-run-qemu-ng-gdb: $(ISO) $(DISK) build/kernel.sym ## run-qemu-ng, paused until GDB attaches on :1234
+run-qemu-ng-gdb: $(ISO) $(DISK) $(KERNEL_SYM) ## run-qemu-ng, paused until GDB attaches on :1234
 	# NOTE: You can quit with Ctrl-A X
-	qemu-system-i386 -nographic -s -S $(QEMU_FLAGS)
+	$(QEMU) -nographic -s -S $(QEMU_FLAGS)
 
 SMOKE_TIMEOUT ?= 120
 
-SMOKE_TEST := build-support/qemu-smoke.bash $(SMOKE_TIMEOUT) build/smoke-test.log $(QEMU_FLAGS)
+SMOKE_TEST := build-support/qemu-smoke.bash $(SMOKE_TIMEOUT) $(BUILD_DIR)/smoke-test.log $(QEMU_FLAGS)
 
 .PHONY: smoke-test
 smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt
@@ -162,7 +209,7 @@ smoke-test: $(ISO) $(DISK) ## Boot in QEMU and wait for the shell prompt
 # For an ISO that was built elsewhere (CI downloads it from the build job), so
 # make doesn't try to rebuild it.
 .PHONY: smoke-test-iso
-smoke-test-iso: $(DISK) ## Like smoke-test, but boot the existing build/kidneyos.iso as is
+smoke-test-iso: $(DISK) ## Like smoke-test, but boot the existing build/ARCH/kidneyos.iso as is
 	@test -f $(ISO) || { echo "$(ISO) does not exist; run 'make iso' first." >&2; exit 1; }
 	$(SMOKE_TEST)
 
@@ -175,7 +222,8 @@ BOCHS_DISPLAY ?=
 endif
 
 .PHONY: run-bochs
-run-bochs: $(ISO) $(DISK) ## Run KidneyOS in Bochs
+run-bochs: $(ISO) $(DISK) ## Run KidneyOS in Bochs (i686 only)
+	@test '$(ARCH)' = i686 || { echo 'run-bochs only supports ARCH=i686 (see bochsrc.txt).' >&2; exit 1; }
 	bochs -q -f bochsrc.txt $(if $(BOCHS_DISPLAY),'display_library: $(BOCHS_DISPLAY)')
 
 # Docs
@@ -271,9 +319,15 @@ check-actionlint: ## Lint the GitHub Actions workflows
 	@$(call need,actionlint) actionlint
 
 .PHONY: clippy
+ifeq ($(ARCH),i686)
 clippy: $(PROGRAMS) ## Run clippy on the kernel and the user programs, denying warnings
 	cargo clippy --target i686-unknown-linux-gnu --workspace -- -D warnings
 	$(PROGRAMS_CARGO) clippy --workspace -- -D warnings
+else
+# Only the kernel (and what it uses) builds for x86_64 so far.
+clippy:
+	cargo clippy --target $(KERNEL_TARGET) --package kidneyos --package kidneyos-shared -- -D warnings
+endif
 
 .PHONY: check-fast
 check-fast: check-fmt check-shellcheck check-mdsh check-actionlint ## Quick checks (run by the pre-commit hook)

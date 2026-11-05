@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: kidneyos-iso
-          path: build/kidneyos.iso
+          path: build/i686/kidneyos.iso
           if-no-files-found: error
           retention-days: 7
 
@@ -90,7 +90,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: kidneyos-iso
-          path: build
+          path: build/i686
       - name: Boot and wait for the shell prompt
         run: make smoke-test-iso
 

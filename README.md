@@ -14,10 +14,12 @@ Set up a build environment first (see the [building guide](https://lance1416.git
 
 ```sh
 make help          # list all available targets
-make               # build the ISO at build/kidneyos.iso
+make               # build the ISO at build/i686/kidneyos.iso
 make run-qemu-ng   # run it in QEMU without a graphical window
 make check         # run the same checks as CI
 ```
+
+The kernel is being ported to x86_64: `make ARCH=x86_64 run-qemu-ng` builds and boots that port (it only prints a greeting so far).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
 
