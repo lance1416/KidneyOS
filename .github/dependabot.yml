@@ -1,0 +1,25 @@
+version: 2
+updates:
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: monthly
+  commit-message:
+    prefix: ci
+    include: scope
+  groups:
+    github-actions:
+      patterns: ['*']
+- package-ecosystem: cargo
+  # The kernel workspace and the user programs workspace.
+  directories:
+  - /
+  - /programs
+  schedule:
+    interval: monthly
+  commit-message:
+    prefix: build
+    include: scope
+  groups:
+    cargo:
+      patterns: ['*']

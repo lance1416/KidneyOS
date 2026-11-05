@@ -1,0 +1,30 @@
+name: Update flake.lock
+on:
+  schedule:
+  # 06:00 UTC on the first day of every month.
+  - cron: '0 6 1 * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  update-flake-lock:
+    name: Open a PR updating nix/flake.lock
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v23
+    - name: Update flake.lock
+      uses: DeterminateSystems/update-flake-lock@v29
+      with:
+        path-to-flake-dir: nix
+        branch: update-flake-lock
+        commit-msg: 'build(nix): update flake.lock'
+        pr-title: 'build(nix): update flake.lock'
+        pr-labels: dependencies
+        # PRs opened with the default GITHUB_TOKEN don't trigger other
+        # workflows, so CI won't run on them. Add a FLAKE_LOCK_TOKEN secret
+        # (a fine-grained token with contents and pull-requests write access)
+        # to have CI run automatically; otherwise close and reopen the PR.
+        token: ${{ secrets.FLAKE_LOCK_TOKEN || secrets.GITHUB_TOKEN }}
