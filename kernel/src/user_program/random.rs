@@ -38,14 +38,14 @@ pub fn getrandom(buffer: &mut [u8], length: usize, _flags: usize) -> isize {
     }
 
     // Handle any remaining bytes if length is not a multiple of 4
-    if remainder > 0 {
-        if let Some(random_int) = generate_random_i32() {
-            let random_bytes = random_int.to_le_bytes();
-            for (i, &byte) in random_bytes.iter().enumerate().take(remainder) {
-                buffer[chunks * 4 + i] = byte;
-            }
-            bytes_written += remainder;
+    if remainder > 0
+        && let Some(random_int) = generate_random_i32()
+    {
+        let random_bytes = random_int.to_le_bytes();
+        for (i, &byte) in random_bytes.iter().enumerate().take(remainder) {
+            buffer[chunks * 4 + i] = byte;
         }
+        bytes_written += remainder;
     }
 
     bytes_written.try_into().unwrap()

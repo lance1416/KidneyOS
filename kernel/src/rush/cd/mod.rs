@@ -4,13 +4,11 @@ use alloc::vec::Vec;
 use kidneyos_shared::eprintln;
 
 pub fn cd(args: Vec<&str>) {
-    let path: String;
-
     // TODO: change to home directory
     let home_dir = "/";
 
-    if args.is_empty() {
-        path = home_dir.to_string();
+    let path: String = if args.is_empty() {
+        home_dir.to_string()
     } else if args.len() > 1 {
         // Too many arguments
         eprintln!("rush: cd: too many arguments");
@@ -39,8 +37,8 @@ pub fn cd(args: Vec<&str>) {
             eprintln!("rush: cd: {}: No such file or directory", new_path);
             return;
         }
-        path = ret.unwrap();
-    }
+        ret.unwrap()
+    };
 
     // Change the directory to the new path
     // eprintln!("DEBUG | cd | {}", path);

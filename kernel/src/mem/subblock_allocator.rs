@@ -160,13 +160,7 @@ impl<F: FrameAllocator> SubblockAllocatorSolution<F> {
     /// Returns true on empty, false if not
     #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        for i in 0..SUBBLOCK_TYPE_COUNT {
-            if self.list_heads[i].is_some() {
-                return false;
-            }
-        }
-
-        true
+        self.list_heads.iter().all(Option::is_none)
     }
 
     /// Returns the length of the linked list corresponding to "subblock_size"

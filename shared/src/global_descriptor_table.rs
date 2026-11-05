@@ -7,7 +7,7 @@ use crate::{
 };
 use core::{arch::asm, mem::size_of, ptr::addr_of};
 
-#[repr(packed)]
+#[repr(C, packed)]
 struct GDTDescriptor {
     #[allow(unused)]
     size: u16,

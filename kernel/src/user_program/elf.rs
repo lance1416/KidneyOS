@@ -55,6 +55,8 @@ pub enum ElfArchitecture {
 }
 
 // Strictly 32-bit ELFs.
+// Not every parsed field is used (yet).
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
 pub struct ElfHeader {
     pub endianness: ElfEndianness,
@@ -169,6 +171,8 @@ pub enum ElfProgramType {
     OsSpecific(u32),
 }
 
+// Not every parsed field is used (yet).
+#[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
 pub struct ElfProgramHeader<'a> {
     pub program_type: ElfProgramType,

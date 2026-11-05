@@ -275,6 +275,7 @@ impl SimpleFileSystem for VSFS {
         let mut data = vec![0; VSFS_BLOCK_SIZE * num_blocks as usize];
 
         // First read all direct blocks
+        #[allow(clippy::needless_range_loop)]
         for i in 0..min(VSFS_DIRECT_BLOCKS, num_blocks as usize) {
             for j in 0..BLOCK_SIZE_RATIO {
                 self.block.read(
@@ -360,6 +361,7 @@ impl SimpleFileSystem for VSFS {
         let num_blocks = inode.block_count;
 
         // First read all direct blocks
+        #[allow(clippy::needless_range_loop)]
         for i in read_start_block..min(VSFS_DIRECT_BLOCKS, num_blocks as usize) {
             let j_start = if i == read_start_block {
                 read_start_sector as usize
@@ -401,7 +403,7 @@ impl SimpleFileSystem for VSFS {
 
             // Read the indirect data blocks
             let mut index = VSFS_DIRECT_BLOCKS;
-            #[allow(clippy::needless_range_loop)]
+            #[allow(clippy::needless_range_loop, clippy::explicit_counter_loop)]
             for i in max(0, read_start_block as isize - VSFS_DIRECT_BLOCKS as isize) as usize
                 ..indirect_blocks.len()
             {
@@ -575,8 +577,8 @@ mod test {
         //println!("second inode's data: {:?}", &buf);
 
         // print buf content as a char
-        for i in 4096 * 7..4096 * 7 + 512 {
-            print!("{}", buf[i] as char);
+        for &b in &buf[4096 * 7..4096 * 7 + 512] {
+            print!("{}", b as char);
         }
         println!();
 

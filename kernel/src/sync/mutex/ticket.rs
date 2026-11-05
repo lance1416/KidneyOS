@@ -66,7 +66,7 @@ impl<T> TicketMutex<T> {
 
 impl<T: ?Sized> TicketMutex<T> {
     #[inline(always)]
-    pub fn lock(&self) -> TicketMutexGuard<T> {
+    pub fn lock(&self) -> TicketMutexGuard<'_, T> {
         let ticket = self.next_ticket.fetch_add(1, Ordering::Relaxed);
 
         while self.next_serving.load(Ordering::Acquire) != ticket {
@@ -90,10 +90,10 @@ impl<T: ?Sized> TicketMutex<T> {
     }
 
     #[inline(always)]
-    pub fn try_lock(&self) -> Option<TicketMutexGuard<T>> {
+    pub fn try_lock(&self) -> Option<TicketMutexGuard<'_, T>> {
         let ticket = self
             .next_ticket
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |ticket| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |ticket| {
                 if self.next_serving.load(Ordering::Acquire) == ticket {
                     Some(ticket.wrapping_add(1))
                 } else {
@@ -125,7 +125,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for TicketMutex<T> {
     }
 }
 
-impl<T: ?Sized + Default> Default for TicketMutex<T> {
+impl<T: Default> Default for TicketMutex<T> {
     fn default() -> Self {
         Self::new(Default::default())
     }

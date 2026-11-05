@@ -34,7 +34,7 @@ impl<const N: usize> PoolAllocator<N> {
             assert!(N >= size_of::<usize>());
 
             // To ensure things are aligned.
-            assert!(region.as_ptr().as_mut_ptr() as usize % N == 0);
+            assert!((region.as_ptr().as_mut_ptr() as usize).is_multiple_of(N));
 
             // Calculate how many blocks the bitmap occupies
             let bitmap_blocks = bitmap_size.div_ceil(N);

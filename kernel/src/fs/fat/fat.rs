@@ -67,12 +67,10 @@ impl Fat {
         let fat = Self { data, r#type };
         // the first two FAT entries are reserved
         for i in 2..cluster_count {
-            if let FatEntry::HasNext(n) = fat.entry(i) {
-                if n < 2 || n >= cluster_count {
-                    return error!(
-                        "invalid entry in FAT: 0x{n:08x} (cluster count = {cluster_count})"
-                    );
-                }
+            if let FatEntry::HasNext(n) = fat.entry(i)
+                && (n < 2 || n >= cluster_count)
+            {
+                return error!("invalid entry in FAT: 0x{n:08x} (cluster count = {cluster_count})");
             }
         }
         Ok(fat)
@@ -82,10 +80,7 @@ impl Fat {
         let mut set = BTreeSet::new();
         let mut cluster = first_cluster;
         set.insert(cluster);
-        loop {
-            let Some(c) = self.next_cluster(cluster)? else {
-                break;
-            };
+        while let Some(c) = self.next_cluster(cluster)? {
             cluster = c;
             v.push(cluster);
             if !set.insert(cluster) {

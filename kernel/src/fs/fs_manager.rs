@@ -733,9 +733,9 @@ impl FileSystemList {
         mount_point: Option<(FileSystemID, INodeNum)>,
     ) -> Result<FileSystemID> {
         let mut new_fs = None;
-        for id in 0..MAX_MOUNT_POINTS as usize {
-            if self.0[id].is_none() {
-                self.0[id] = Some(Box::new(FileSystemManager::new(fs, mount_point)));
+        for (id, slot) in self.0.iter_mut().enumerate() {
+            if slot.is_none() {
+                *slot = Some(Box::new(FileSystemManager::new(fs, mount_point)));
                 new_fs = Some(id as FileSystemID);
                 break;
             }
@@ -1467,6 +1467,12 @@ impl RootFileSystem {
     }
 }
 
+impl Default for RootFileSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1504,7 +1510,7 @@ mod test {
             ProcessFileDescriptor { fd, pid: pcb.pid }
         };
         while !contents.is_empty() {
-            let n = RootFileSystem::write(&root_mutex, fd, contents)?;
+            let n = RootFileSystem::write(root_mutex, fd, contents)?;
             assert!(n > 0);
             contents = &contents[n..];
         }
@@ -1544,7 +1550,7 @@ mod test {
         root.mount(&pcb, "/2/3", fs3).unwrap();
         let root_mutex = Mutex::new(root);
         for path in ["/foo", "/2/foo", "/2/3/foo"] {
-            let file = open(&mut *root_mutex.lock(), path, Mode::CreateReadWrite).unwrap();
+            let file = open(&mut root_mutex.lock(), path, Mode::CreateReadWrite).unwrap();
             // we shouldn't be allowed to unmount the FS file is contained in while it's open
             assert!(matches!(
                 root_mutex

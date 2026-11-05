@@ -21,7 +21,7 @@ impl DummyAllocatorSolution {
     /// This allocation should do two things:
     ///
     /// 1. Returns a piece of memory starting at "start_address" used to store the
-    /// CoreMap Entries for actual frames
+    ///    CoreMap Entries for actual frames
     ///
     /// 2. Increment "start_address" to point to the next free frame in memory
     ///

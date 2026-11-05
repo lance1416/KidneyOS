@@ -149,6 +149,7 @@ static mut SERIAL_WRITER: SerialWriter = SerialWriter { initialized: false };
 /// The caller must ensure that no other reference to the writer is in use
 /// while the returned one is (e.g. single core and no interrupts).
 pub unsafe fn serial_writer() -> &'static mut SerialWriter {
+    let ptr = &raw mut SERIAL_WRITER;
     // SAFETY: Exclusive access is guaranteed by the caller.
-    unsafe { &mut *&raw mut SERIAL_WRITER }
+    unsafe { &mut *ptr }
 }

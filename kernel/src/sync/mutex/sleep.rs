@@ -72,7 +72,7 @@ impl<'a, T: ?Sized> DerefMut for SleepMutexGuard<'a, T> {
     }
 }
 
-impl<T: ?Sized + Default> Default for SleepMutex<T> {
+impl<T: Default> Default for SleepMutex<T> {
     fn default() -> Self {
         Self::new(Default::default())
     }
@@ -104,7 +104,7 @@ impl<T> SleepMutex<T> {
 
 impl<T: ?Sized> SleepMutex<T> {
     #[must_use = "Mutex is released when guard falls out of scope."]
-    pub fn lock(&self) -> SleepMutexGuard<T> {
+    pub fn lock(&self) -> SleepMutexGuard<'_, T> {
         let current_tid = running_thread_tid();
 
         loop {

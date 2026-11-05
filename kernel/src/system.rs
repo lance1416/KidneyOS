@@ -44,14 +44,14 @@ pub fn init_system(state: SystemState) {
     //   - only one thread can successfully exchange UNINITIALIZED with INITIALIZING
     //   - no threads can have references to the system since unwrap_system()
     //     requires SYSTEM_STATE to be set to INITIALIZED
-    unsafe { (*&raw mut SYSTEM).write(state) };
+    unsafe { (&raw mut SYSTEM).cast::<SystemState>().write(state) };
     SYSTEM_STATE.store(INITIALIZED, core::sync::atomic::Ordering::Release);
 }
 
 pub fn unwrap_system() -> &'static SystemState {
     if SYSTEM_STATE.load(core::sync::atomic::Ordering::Acquire) == INITIALIZED {
         // SAFETY: since SYSTEM_STATE = INITIALIZED, the SYSTEM has been initialized.
-        unsafe { (*&raw const SYSTEM).assume_init_ref() }
+        unsafe { &*(&raw const SYSTEM).cast::<SystemState>() }
     } else {
         panic!("System not initialized.");
     }

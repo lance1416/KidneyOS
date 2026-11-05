@@ -26,9 +26,12 @@ pub struct NextFit {
 }
 
 // There is no internal data for these two algorithms. Declare them as zero-sized types.
+// They are currently only used by tests.
 #[derive(Default)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub struct FirstFit;
 #[derive(Default)]
+#[cfg_attr(not(test), allow(dead_code))]
 pub struct BestFit;
 
 impl PlacementAlgorithm for NextFit {

@@ -45,7 +45,7 @@ impl<T> Mutex<T> {
 
 impl<T: ?Sized> Mutex<T> {
     #[inline(always)]
-    pub fn lock(&self) -> MutexGuard<T> {
+    pub fn lock(&self) -> MutexGuard<'_, T> {
         MutexGuard {
             inner: self.inner.lock(),
         }
@@ -57,7 +57,7 @@ impl<T: ?Sized> Mutex<T> {
     }
 
     #[inline(always)]
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
         self.inner
             .try_lock()
             .map(|guard| MutexGuard { inner: guard })
@@ -75,7 +75,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
     }
 }
 
-impl<T: ?Sized + Default> Default for Mutex<T> {
+impl<T: Default> Default for Mutex<T> {
     fn default() -> Self {
         Self::new(Default::default())
     }

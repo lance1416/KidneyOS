@@ -32,7 +32,7 @@ pub enum Colour {
 }
 
 #[derive(Clone, Copy)]
-#[repr(packed)]
+#[repr(C, packed)]
 pub struct Attribute {
     #[allow(dead_code)]
     inner: u8,
@@ -49,7 +49,7 @@ impl Attribute {
 
 impl VideoMemoryWriter {
     pub fn skip_lines(&mut self, mut n: usize) {
-        if self.cursor % VIDEO_MEMORY_COLS != 0 {
+        if !self.cursor.is_multiple_of(VIDEO_MEMORY_COLS) {
             self.cursor = self.cursor.next_multiple_of(VIDEO_MEMORY_COLS);
             n -= 1;
         }
@@ -61,7 +61,7 @@ impl VideoMemoryWriter {
 }
 
 #[allow(dead_code)]
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 struct Character {
     ascii: u8,
@@ -122,8 +122,9 @@ static mut VIDEO_MEMORY_WRITER: VideoMemoryWriter = VideoMemoryWriter {
 /// The caller must ensure that no other reference to the writer is in use
 /// while the returned one is (e.g. single core and no interrupts).
 pub unsafe fn video_memory_writer() -> &'static mut VideoMemoryWriter {
+    let ptr = &raw mut VIDEO_MEMORY_WRITER;
     // SAFETY: Exclusive access is guaranteed by the caller.
-    unsafe { &mut *&raw mut VIDEO_MEMORY_WRITER }
+    unsafe { &mut *ptr }
 }
 
 // Functions for RUSH

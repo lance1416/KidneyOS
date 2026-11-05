@@ -74,7 +74,7 @@ struct Headers {
 }
 
 impl Info {
-    pub const fn iter(&self) -> InfoIterator {
+    pub const fn iter(&self) -> InfoIterator<'_> {
         InfoIterator {
             info: self,
             offset: size_of::<Self>() as u32,

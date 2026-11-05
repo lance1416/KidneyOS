@@ -61,7 +61,7 @@ impl<T> MutexIrq<T> {
 #[allow(unused)]
 impl<T: ?Sized> MutexIrq<T> {
     #[inline(always)]
-    pub fn lock(&self) -> MutexGuardIrq<T> {
+    pub fn lock(&self) -> MutexGuardIrq<'_, T> {
         loop {
             if let Some(guard) = self.try_lock() {
                 return guard;
@@ -75,7 +75,7 @@ impl<T: ?Sized> MutexIrq<T> {
     }
 
     #[inline(always)]
-    pub fn try_lock(&self) -> Option<MutexGuardIrq<T>> {
+    pub fn try_lock(&self) -> Option<MutexGuardIrq<'_, T>> {
         if self.lock.is_locked() {
             return None;
         }
@@ -101,7 +101,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexIrq<T> {
     }
 }
 
-impl<T: ?Sized + Default> Default for MutexIrq<T> {
+impl<T: Default> Default for MutexIrq<T> {
     fn default() -> MutexIrq<T> {
         MutexIrq::new(Default::default())
     }

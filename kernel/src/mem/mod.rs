@@ -184,6 +184,12 @@ impl KernelAllocator {
     }
 }
 
+impl Default for KernelAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // SAFETY:
 //
 // - We don't panic.
@@ -207,8 +213,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     return ptr::null_mut();
                 }
 
-                let num_frames_requested =
-                    ((size + align).next_multiple_of(PAGE_FRAME_SIZE)) / PAGE_FRAME_SIZE;
+                let num_frames_requested = (size + align).div_ceil(PAGE_FRAME_SIZE);
 
                 let Ok(region) = dummy_allocator.alloc(num_frames_requested) else {
                     halt!(

@@ -473,7 +473,7 @@ pub extern "C" fn mmap(
             int 0x80
             ",
             in("eax") SYS_MMAP,
-            in("ebx") &options,
+            in("ebx") &raw const options,
             lateout("eax") result,
         )
     }

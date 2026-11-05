@@ -18,7 +18,7 @@ pub struct Bitmap {
 
 impl Bitmap {
     pub fn new(num_bits: u32) -> Self {
-        let num_bytes = (num_bits + 7) / 8; // Calculate how many bytes are needed.
+        let num_bytes = num_bits.div_ceil(8); // Calculate how many bytes are needed.
         Self {
             bits: vec![0; num_bytes as usize],
         }

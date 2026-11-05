@@ -46,8 +46,9 @@ static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 /// interface, e.g. from an interrupt handler) uses the allocator while the
 /// returned reference is in use.
 pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
+    let ptr = &raw mut KERNEL_ALLOCATOR;
     // SAFETY: Exclusive access is guaranteed by the caller.
-    unsafe { &mut *&raw mut KERNEL_ALLOCATOR }
+    unsafe { &mut *ptr }
 }
 
 #[cfg(not(test))]

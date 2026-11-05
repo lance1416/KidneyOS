@@ -113,7 +113,7 @@ impl FatBaseHeader {
         if self.reserved_sector_count() == 0 {
             return error!("reserved sector count must be nonzero");
         }
-        if self.fat16_root_ent_count() * 32 % self.bytes_per_sector() != 0 {
+        if !(self.fat16_root_ent_count() * 32).is_multiple_of(self.bytes_per_sector()) {
             return error!("root entry count * 32B must be an integer number of sectors");
         }
         Ok(())
@@ -215,15 +215,15 @@ impl FatFS {
         let data_sectors =
             total_sectors - reserved_sector_count - num_fats * fat_size - root_dir_sectors;
         let cluster_count = data_sectors / u32::from(base_header.sectors_per_cluster);
-        let fat_type;
-        if cluster_count < 4085 {
+
+        let fat_type = if cluster_count < 4085 {
             return error!("FAT-12 is not supported. Try creating a larger volume.");
         } else if cluster_count < 65525 {
-            fat_type = FatType::Fat16;
+            FatType::Fat16
         } else {
             fat32_header.verify_integrity()?;
-            fat_type = FatType::Fat32;
-        }
+            FatType::Fat32
+        };
         let disk_sectors_per_fat_sector = bytes_per_sector / BLOCK_SECTOR_SIZE as u32;
         // First disk sector in the FAT.
         let mut fat_first_disk_sector = reserved_sector_count * disk_sectors_per_fat_sector;

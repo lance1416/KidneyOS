@@ -98,8 +98,8 @@ impl Directory {
                 }
                 // remove extra allocated zeroes
                 self.names.truncate(name + name_len);
-                // reset long name (unlike clear() this doesn't shrink the allocation, which is nice)
-                self.long_name.truncate(0);
+                // reset long name (this keeps the allocation, which is nice)
+                self.long_name.clear();
             } else {
                 // no long name — read short name
                 fn read_short_name_part(name: &mut Vec<u8>, mut part: &[u8]) -> Result<()> {

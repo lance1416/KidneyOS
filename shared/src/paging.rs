@@ -364,7 +364,7 @@ impl<A: Allocator> PageManager<A> {
                 }
 
                 if *PSE_ENABLED
-                    && virt_addr % HUGE_PAGE_SIZE == 0
+                    && virt_addr.is_multiple_of(HUGE_PAGE_SIZE)
                     && phys_addr.saturating_add(HUGE_PAGE_SIZE) - phys_start <= len
                 {
                     self.huge_map(phys_addr, virt_addr, write, user);

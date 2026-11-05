@@ -72,12 +72,12 @@ pub extern "C" fn ide_init() -> i32 {
         }
     }
 
-    for (i, c) in CHANNELS.iter().enumerate() {
-        for j in 0..2 {
-            if present[i][j] {
+    for (c, channel_present) in CHANNELS.iter().zip(present) {
+        for (j, device_present) in channel_present.into_iter().enumerate() {
+            if device_present {
                 unsafe { identify_ata_device(c, j as u8, true) };
             } else {
-                // println!("IDE: Channel {} device {} not present", i, j);
+                // println!("IDE: Channel {:?} device {} not present", c.name, j);
             }
         }
     }
