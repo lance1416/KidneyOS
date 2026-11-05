@@ -59,9 +59,9 @@ pub struct VSFS {
 }
 
 impl VSFS {
-    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
-    // `BlockSector`s, which are the same width on the target. Revisit for the
-    // x86_64 port.
+    // Sector arithmetic mixes usize indices with u32 `BlockSector`s; the
+    // indices are bounded by the file system's u32 block counts, so the casts
+    // don't truncate.
     #[allow(clippy::cast_possible_truncation)]
     pub fn new(block: Block) -> Result<Self> {
         // Read the superblock from the first block
@@ -275,9 +275,9 @@ impl SimpleFileSystem for VSFS {
     }
 
     // Read the directory entries for the given inode
-    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
-    // `BlockSector`s, which are the same width on the target. Revisit for the
-    // x86_64 port.
+    // Sector arithmetic mixes usize indices with u32 `BlockSector`s; the
+    // indices are bounded by the file system's u32 block counts, so the casts
+    // don't truncate.
     #[allow(clippy::cast_possible_truncation)]
     fn readdir(&mut self, dir: INodeNum) -> Result<DirEntries> {
         // Read the inode from the inodes vector
@@ -350,10 +350,9 @@ impl SimpleFileSystem for VSFS {
         todo!()
     }
 
-    // 32-bit x86 specific: sector arithmetic mixes usize indices with u32
-    // `BlockSector`s, which are the same width on the target. Revisit for the
-    // x86_64 port.
-    // `read_size as isize` intentionally wraps to detect `offset > file_size`.
+    // Sector arithmetic mixes usize indices with u32 `BlockSector`s; the
+    // indices are bounded by the file system's u32 block counts, so the casts
+    // don't truncate.
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
     fn read(&mut self, file: INodeNum, offset: u64, buf: &mut [u8]) -> Result<usize> {
         // Assume offset is a multiple of the sector size
@@ -361,11 +360,14 @@ impl SimpleFileSystem for VSFS {
         // Read the inode from the inodes vector
         let inode = self.inodes[file as usize];
         let file_size = inode.size as usize;
-        let read_size = file_size - offset as usize; // How many bytes to read
-        let buf_size = buf.len(); // Size of the buffer
-        if read_size as isize <= 0 {
+        // Nothing to read at or past the end of the file.
+        let bytes_left = usize::try_from(offset)
+            .ok()
+            .and_then(|offset| file_size.checked_sub(offset));
+        if bytes_left.is_none_or(|bytes_left| bytes_left == 0) {
             return Ok(0);
         }
+        let buf_size = buf.len(); // Size of the buffer
 
         let read_start_block: usize = (offset / VSFS_BLOCK_SIZE as u64) as usize;
         let read_start_offset = offset % VSFS_BLOCK_SIZE as u64;
