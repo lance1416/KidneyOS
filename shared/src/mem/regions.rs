@@ -43,6 +43,117 @@ pub fn largest_region(
         })
 }
 
+/// Returned when a [`RegionList`] would need more than its capacity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionListFull;
+
+/// A set of physical memory, as at most `N` disjoint, non-adjacent regions
+/// sorted by address. Adding merges overlapping and adjacent regions; removing
+/// may split one.
+#[derive(Clone, Debug)]
+pub struct RegionList<const N: usize> {
+    regions: [PhysRegion; N],
+    len: usize,
+}
+
+impl<const N: usize> Default for RegionList<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const N: usize> RegionList<N> {
+    const EMPTY: PhysRegion = PhysRegion { start: 0, end: 0 };
+
+    pub const fn new() -> Self {
+        Self {
+            regions: [Self::EMPTY; N],
+            len: 0,
+        }
+    }
+
+    pub fn as_slice(&self) -> &[PhysRegion] {
+        &self.regions[..self.len]
+    }
+
+    /// Total size of the regions in bytes.
+    pub fn total_len(&self) -> u64 {
+        self.as_slice().iter().map(PhysRegion::len).sum()
+    }
+
+    /// Adds `region` to the set. On error, the set is unchanged.
+    pub fn add(&mut self, mut region: PhysRegion) -> Result<(), RegionListFull> {
+        if region.is_empty() {
+            return Ok(());
+        }
+
+        let mut out = Self::new();
+        let mut placed = false;
+        for &existing in self.as_slice() {
+            if existing.end < region.start {
+                out.push(existing)?;
+            } else if region.end < existing.start {
+                if !placed {
+                    out.push(region)?;
+                    placed = true;
+                }
+                out.push(existing)?;
+            } else {
+                // Overlapping or adjacent: merge into `region`, which can't
+                // have been placed yet since the regions are sorted.
+                region = PhysRegion {
+                    start: region.start.min(existing.start),
+                    end: region.end.max(existing.end),
+                };
+            }
+        }
+        if !placed {
+            out.push(region)?;
+        }
+
+        *self = out;
+        Ok(())
+    }
+
+    /// Removes `region` from the set. On error, the set is unchanged.
+    pub fn remove(&mut self, region: PhysRegion) -> Result<(), RegionListFull> {
+        if region.is_empty() {
+            return Ok(());
+        }
+
+        let mut out = Self::new();
+        for &existing in self.as_slice() {
+            if existing.end <= region.start || region.end <= existing.start {
+                out.push(existing)?;
+                continue;
+            }
+            let below = PhysRegion {
+                start: existing.start,
+                end: region.start,
+            };
+            let above = PhysRegion {
+                start: region.end,
+                end: existing.end,
+            };
+            for part in [below, above] {
+                if part.start < part.end {
+                    out.push(part)?;
+                }
+            }
+        }
+
+        *self = out;
+        Ok(())
+    }
+
+    fn push(&mut self, region: PhysRegion) -> Result<(), RegionListFull> {
+        let slot = self.regions.get_mut(self.len).ok_or(RegionListFull)?;
+        *slot = region;
+        self.len += 1;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,5 +204,79 @@ mod tests {
         assert_eq!(largest_region([], 0, GB), None);
         assert_eq!(largest_region([region(0, MB)], MB, GB), None);
         assert_eq!(largest_region([region(2 * GB, 3 * GB)], MB, GB), None);
+    }
+
+    #[test]
+    fn region_list_merges_overlapping_and_adjacent() {
+        let mut list = RegionList::<4>::new();
+        list.add(region(3 * MB, 4 * MB)).expect("fits");
+        list.add(region(MB, 2 * MB)).expect("fits");
+        assert_eq!(
+            list.as_slice(),
+            [region(MB, 2 * MB), region(3 * MB, 4 * MB)]
+        );
+
+        // Adjacent to the first one.
+        list.add(region(2 * MB, 2 * MB + 4096)).expect("fits");
+        assert_eq!(
+            list.as_slice(),
+            [region(MB, 2 * MB + 4096), region(3 * MB, 4 * MB)]
+        );
+
+        // Bridges both.
+        list.add(region(MB + 1, 3 * MB + 1)).expect("fits");
+        assert_eq!(list.as_slice(), [region(MB, 4 * MB)]);
+
+        // Empty regions are ignored.
+        list.add(region(5 * MB, 5 * MB)).expect("fits");
+        assert_eq!(list.total_len(), 3 * MB);
+    }
+
+    #[test]
+    fn region_list_remove_splits() {
+        let mut list = RegionList::<4>::new();
+        list.add(region(MB, 8 * MB)).expect("fits");
+        list.add(region(GB, 2 * GB)).expect("fits");
+
+        list.remove(region(2 * MB, 3 * MB)).expect("fits");
+        assert_eq!(
+            list.as_slice(),
+            [
+                region(MB, 2 * MB),
+                region(3 * MB, 8 * MB),
+                region(GB, 2 * GB)
+            ]
+        );
+
+        // Covers the end of one region and the start of the next.
+        list.remove(region(7 * MB, GB + MB)).expect("fits");
+        assert_eq!(
+            list.as_slice(),
+            [
+                region(MB, 2 * MB),
+                region(3 * MB, 7 * MB),
+                region(GB + MB, 2 * GB)
+            ]
+        );
+
+        // Removing everything.
+        list.remove(region(0, u64::MAX)).expect("fits");
+        assert!(list.as_slice().is_empty());
+    }
+
+    #[test]
+    fn region_list_capacity() {
+        let mut list = RegionList::<2>::new();
+        list.add(region(0, MB)).expect("fits");
+        list.add(region(2 * MB, 3 * MB)).expect("fits");
+        assert_eq!(list.add(region(4 * MB, 5 * MB)), Err(RegionListFull));
+        // A region that merges still fits.
+        list.add(region(MB, 2 * MB)).expect("fits");
+        assert_eq!(list.as_slice(), [region(0, 3 * MB)]);
+
+        let mut list = RegionList::<1>::new();
+        list.add(region(0, 3 * MB)).expect("fits");
+        assert_eq!(list.remove(region(MB, 2 * MB)), Err(RegionListFull));
+        assert_eq!(list.as_slice(), [region(0, 3 * MB)], "unchanged on error");
     }
 }

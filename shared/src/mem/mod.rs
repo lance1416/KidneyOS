@@ -1,3 +1,4 @@
+pub mod frames;
 pub mod pool_allocator;
 pub mod regions;
 
