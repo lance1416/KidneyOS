@@ -9,14 +9,14 @@ pub fn check_and_copy_user_memory<A: Allocator>(
     count: usize,
     page_manager: &PageManager<A>,
 ) -> Option<Vec<u8>> {
-    let range_end = pointer + count;
+    let range_end = pointer.checked_add(count)?;
 
     // Trying to read from kernel memory.
     if range_end >= OFFSET {
         return None;
     }
 
-    if !page_manager.is_range_mapped(pointer, count) {
+    if !page_manager.can_access_range(pointer, count, false, true) {
         return None;
     }
 

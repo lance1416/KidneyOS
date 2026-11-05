@@ -400,7 +400,11 @@ impl<A: Allocator> PageManager<A> {
     }
 
     /// Returns whether `pointer` is valid for reads if `write = false`, and writes if `write = true`.
-    pub fn can_access(&self, pointer: usize, write: bool) -> bool {
+    /// If `user = true`, the access must also be allowed from user mode.
+    ///
+    /// Like the MMU, this requires the R/W and U/S bits in both the page
+    /// directory entry and the page table entry.
+    pub fn can_access(&self, pointer: usize, write: bool, user: bool) -> bool {
         let (pdi, pti) = virt_parts(pointer);
 
         let page_directory = unsafe { self.root.as_ref() };
@@ -412,22 +416,24 @@ impl<A: Allocator> PageManager<A> {
             return false;
         }
 
+        if (write && !entry.read_write()) || (user && !entry.user_supervisor()) {
+            return false;
+        }
+
         if entry.page_size() {
             // Huge page
-            return !write || entry.read_write();
+            return true;
         }
 
         let page_table =
             unsafe { &*page_directory.page_table(pdi, self.phys_to_alloc_addr_offset) };
         let entry = &page_table.0[pti];
-        if !entry.present() {
-            return false;
-        }
-        !write || entry.read_write()
+        entry.present() && (!write || entry.read_write()) && (!user || entry.user_supervisor())
     }
 
     /// Returns whether `pointer..pointer+count` is valid for reads if `write = false`, and writes if `write = true`.
-    pub fn can_access_range(&self, pointer: usize, count: usize, write: bool) -> bool {
+    /// If `user = true`, the access must also be allowed from user mode.
+    pub fn can_access_range(&self, pointer: usize, count: usize, write: bool, user: bool) -> bool {
         let Some(end) = pointer.checked_add(count) else {
             return false;
         };
@@ -437,29 +443,29 @@ impl<A: Allocator> PageManager<A> {
         // Check if each 4K page is mapped.
         (start..end)
             .step_by(PAGE_FRAME_SIZE)
-            .all(|ptr| self.can_access(ptr, write))
+            .all(|ptr| self.can_access(ptr, write, user))
     }
 
     /// Returns true if this `pointer` is mapped in this PageManager.
     ///
     /// This doesn't return a &PageEntry because it would work strangely with huge pages.
     pub fn is_mapped(&self, pointer: usize) -> bool {
-        self.can_access(pointer, false)
+        self.can_access(pointer, false, false)
     }
 
     /// Returns true if `count` bytes after `pointer` are mapped in this PageManager.
     pub fn is_range_mapped(&self, pointer: usize, count: usize) -> bool {
-        self.can_access_range(pointer, count, false)
+        self.can_access_range(pointer, count, false, false)
     }
 
     /// Returns true if `pointer` is writeable in this PageManager.
     pub fn is_writeable(&self, pointer: usize) -> bool {
-        self.can_access(pointer, true)
+        self.can_access(pointer, true, false)
     }
 
     /// Returns true if `count` bytes after `pointer` are writeable in this PageManager.
     pub fn is_range_writeable(&self, pointer: usize, count: usize) -> bool {
-        self.can_access_range(pointer, count, true)
+        self.can_access_range(pointer, count, true, false)
     }
 }
 
@@ -651,4 +657,50 @@ pub fn kernel_mapping_ranges() -> [MappingRange; 5] {
             user: false,
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+
+    use super::*;
+    use core::mem::ManuallyDrop;
+    use std::alloc::Global;
+
+    const KERNEL_PAGE: usize = 0x0040_0000;
+    const USER_RO_PAGE: usize = 0x0040_1000;
+    const USER_RW_PAGE: usize = 0x0040_2000;
+
+    fn page_manager() -> ManuallyDrop<PageManager<Global>> {
+        let mut pm = PageManager::new_in(Global, 0);
+        unsafe {
+            pm.map(0x1000, KERNEL_PAGE, true, false);
+            pm.map(0x2000, USER_RO_PAGE, false, true);
+            pm.map(0x3000, USER_RW_PAGE, true, true);
+        }
+        // Dropping reads cr3, which is privileged.
+        ManuallyDrop::new(pm)
+    }
+
+    #[test]
+    fn user_access_requires_user_bit() {
+        let pm = page_manager();
+
+        assert!(pm.can_access(KERNEL_PAGE, true, false));
+        assert!(!pm.can_access(KERNEL_PAGE, false, true));
+
+        assert!(pm.can_access(USER_RO_PAGE, false, true));
+        assert!(!pm.can_access(USER_RO_PAGE, true, true));
+        assert!(pm.can_access(USER_RW_PAGE, true, true));
+    }
+
+    #[test]
+    fn user_range_access() {
+        let pm = page_manager();
+
+        assert!(pm.can_access_range(USER_RO_PAGE, 2 * PAGE_FRAME_SIZE, false, true));
+        assert!(!pm.can_access_range(USER_RO_PAGE, 2 * PAGE_FRAME_SIZE, true, true));
+        assert!(!pm.can_access_range(KERNEL_PAGE + 8, PAGE_FRAME_SIZE, false, true));
+        assert!(pm.is_range_mapped(KERNEL_PAGE, 3 * PAGE_FRAME_SIZE));
+    }
 }

@@ -28,7 +28,7 @@ fn can_access_range<T>(start: *const T, count: usize, write: bool) -> bool {
         .as_ref()
         .expect("A syscall was called without a running thread.")
         .page_manager
-        .can_access_range(start, bytes, write)
+        .can_access_range(start, bytes, write, true)
 }
 
 fn is_range_readable<T>(start: *const T, count: usize) -> bool {
