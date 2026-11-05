@@ -1,4 +1,3 @@
-use core::arch::asm;
 use kidneyos_shared::serial::{inb, outb};
 
 pub const PIC1_OFFSET: u8 = 0x20;
@@ -49,14 +48,9 @@ pub unsafe fn init_pit() {
         // channel 0 (bit 6-7), lo/hi-byte (bit 4-5), rate generator (bit 1-3)
         outb(0x43, 0b00110100);
 
-        asm!(
-            "
-        mov ax, 0xffff // (reload value)
-        out 0x40, al // set low byte of PIT reload value
-        mov al, ah
-        out 0x40, al // set high byte of PIT reload value
-        ",
-        );
+        // Reload value 0xffff, low byte first.
+        outb(0x40, 0xff);
+        outb(0x40, 0xff);
 
         // unmask and activate all IRQs
         outb(PIC1_DATA, 0x0);
