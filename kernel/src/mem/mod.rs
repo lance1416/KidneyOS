@@ -6,6 +6,7 @@ pub mod user;
 pub mod util;
 pub mod vma;
 
+use crate::interrupts::{IntrLevel, mutex_irq::hold_interrupts};
 use alloc::{boxed::Box, vec};
 use core::sync::atomic::AtomicBool;
 use core::{
@@ -146,6 +147,7 @@ impl KernelAllocator {
     }
 
     pub fn frame_alloc(&mut self, frames: usize) -> Result<NonNull<u8>, AllocError> {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
         let KernelAllocatorState::Initialized { subblock_allocator } = self.state.get_mut() else {
             return Err(AllocError);
         };
@@ -154,6 +156,7 @@ impl KernelAllocator {
     }
 
     pub fn frame_dealloc(&mut self, ptr: NonNull<u8>) {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
         let KernelAllocatorState::Initialized { subblock_allocator } = self.state.get_mut() else {
             halt!("[KERNEL ALLOCATOR]: Dealloc called on DeInitialized or SetupState kernel");
         };
@@ -200,6 +203,7 @@ impl Default for KernelAllocator {
 // - We never rely on allocations happening.
 unsafe impl GlobalAlloc for KernelAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
         unsafe {
             if FIRST_ALLOCATION.load(Ordering::Relaxed) {
                 // If we are here, it should be the dummy allocator doing the allocation
@@ -257,6 +261,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
         unsafe {
             let KernelAllocatorState::Initialized {
                 subblock_allocator, ..

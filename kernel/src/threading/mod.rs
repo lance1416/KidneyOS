@@ -7,12 +7,11 @@ pub mod thread_functions;
 pub mod thread_sleep;
 
 use crate::rush::rush_core::rush_loop;
-use crate::sync::mutex::Mutex;
 use crate::system::unwrap_system;
 use crate::threading::scheduling::Scheduler;
 use crate::user_program::elf::Elf;
 use crate::{
-    interrupts::{IntrLevel, intr_enable, intr_get_level},
+    interrupts::{IntrLevel, intr_enable, intr_get_level, mutex_irq::MutexIrq},
     paging::PageManager,
     threading::scheduling::create_scheduler,
 };
@@ -20,21 +19,23 @@ use alloc::boxed::Box;
 use kidneyos_shared::println;
 use thread_control_block::ThreadControlBlock;
 
+/// Both are used by every context switch, including from the timer interrupt,
+/// so holding one with interrupts enabled would deadlock.
 pub struct ThreadState {
-    pub running_thread: Mutex<Option<Box<ThreadControlBlock>>>,
-    pub scheduler: Mutex<Box<dyn Send + Scheduler>>,
+    pub running_thread: MutexIrq<Option<Box<ThreadControlBlock>>>,
+    pub scheduler: MutexIrq<Box<dyn Send + Scheduler>>,
 }
 
 pub fn create_thread_state() -> ThreadState {
     assert_eq!(intr_get_level(), IntrLevel::IntrOff);
 
     // Initialize the scheduler.
-    let scheduler = Mutex::new(create_scheduler());
+    let scheduler = MutexIrq::new(create_scheduler());
 
     // SAFETY: Interrupts must be disabled.
 
     ThreadState {
-        running_thread: Mutex::new(None), // Drop Option<> and set this to the IDLE thread?
+        running_thread: MutexIrq::new(None), // Drop Option<> and set this to the IDLE thread?
         scheduler,
     }
 }

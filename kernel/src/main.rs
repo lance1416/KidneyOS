@@ -44,9 +44,9 @@ static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 ///
 /// # Safety
 ///
-/// The caller must ensure that nothing else (including the global allocator
-/// interface, e.g. from an interrupt handler) uses the allocator while the
-/// returned reference is in use.
+/// The caller must not keep the returned reference across anything that uses
+/// the allocator, like the global allocator interface. (Its methods hold
+/// interrupts off, so one call at a time is fine.)
 pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
     let ptr = &raw mut KERNEL_ALLOCATOR;
     // SAFETY: Exclusive access is guaranteed by the caller.
