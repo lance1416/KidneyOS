@@ -924,8 +924,14 @@ impl RootFileSystem {
         Ok(self.new_fd(pid, new_file)?.fd)
     }
     pub fn dup2(&mut self, fd: ProcessFileDescriptor, into: ProcessFileDescriptor) -> Result<()> {
+        if !self.open_files.contains_key(&fd) {
+            return Err(Error::BadFd);
+        }
+        if fd == into {
+            return Ok(());
+        }
         if self.open_files.contains_key(&into) {
-            self.close(fd).ok(); // errors are discarded
+            self.close(into).ok(); // errors are discarded
         }
 
         let open_file = self.open_files.get_mut(&fd).ok_or(Error::BadFd)?;
