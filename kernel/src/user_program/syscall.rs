@@ -38,9 +38,6 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
             #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
             process_functions::exit_process(arg0 as i32);
         }
-        SYS_FORK => {
-            todo!("fork syscall")
-        }
         SYS_OPEN => open(arg0 as _, arg1),
         SYS_READ => read(arg0, arg1 as _, arg2 as _),
         SYS_WRITE => write(arg0, arg1 as _, arg2 as _),
@@ -140,9 +137,6 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
             scheduler_yield_and_die();
         }
         SYS_GETPID => isize::try_from(running_thread_pid()).expect("Pid fits in isize"),
-        SYS_NANOSLEEP => {
-            todo!("nanosleep syscall")
-        }
         SYS_GETPPID => isize::try_from(running_thread_ppid()).expect("Pid fits in isize"),
         SYS_SCHED_YIELD => {
             scheduler_yield_and_continue();
@@ -185,6 +179,7 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
                 options.offset,
             )
         }
+        // Including fork and nanosleep, which aren't implemented yet.
         _ => -ENOSYS,
     }
 }
