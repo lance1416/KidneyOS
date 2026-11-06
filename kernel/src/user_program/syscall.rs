@@ -5,7 +5,6 @@ use crate::fs::syscalls::{
     chdir, close, dup, dup2, fstat, ftruncate, getcwd, getdents, link, lseek64, mkdir, mmap, mount,
     open, pipe, read, rename, rmdir, symlink, sync, unlink, unmount, write,
 };
-use crate::interrupts::{intr_disable, intr_enable};
 use crate::mem::util::{
     CStrError, get_cstr_from_user_space, get_mut_from_user_space, get_mut_slice_from_user_space,
     get_ref_from_user_space,
@@ -15,7 +14,7 @@ use crate::threading::process::Pid;
 use crate::threading::process_functions;
 use crate::threading::scheduling::{scheduler_yield_and_continue, scheduler_yield_and_die};
 use crate::threading::thread_control_block::ThreadControlBlock;
-use crate::threading::thread_sleep::thread_sleep;
+use crate::threading::thread_sleep::{take_wakeup, thread_sleep};
 use crate::user_program::elf::Elf;
 use crate::user_program::random::getrandom;
 use crate::user_program::time::{CLOCK_MONOTONIC, CLOCK_REALTIME, Timespec, get_rtc, get_tsc};
@@ -90,18 +89,14 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
             parent_pcb.waiting_thread = Some(running_thread_tid());
             drop(parent_pcb);
 
-            loop {
-                intr_disable();
-                {
-                    let parent_pcb = pcb_ref.lock();
-                    if parent_pcb.exit_code.is_some() {
-                        intr_enable();
-                        break;
-                    }
-                }
-                intr_enable();
+            while pcb_ref.lock().exit_code.is_none() {
                 thread_sleep();
             }
+
+            // `exit_process` wakes us while holding the lock it sets the exit
+            // code under, so it has by now. If we saw the exit code without
+            // sleeping, a later sleep mustn't end because of that wakeup.
+            take_wakeup();
 
             let parent_pcb = pcb_ref.lock();
             let exit_code = parent_pcb

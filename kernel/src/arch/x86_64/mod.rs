@@ -51,6 +51,16 @@ pub fn disable_interrupts() {
     compiler_fence(Ordering::SeqCst);
 }
 
+/// With interrupts disabled, enables them until one has been handled. `sti`
+/// only takes effect after the next instruction, so none can slip in before
+/// the `hlt`.
+pub fn wait_for_interrupt() {
+    compiler_fence(Ordering::SeqCst);
+    // SAFETY: Handling interrupts is safe here, per the caller.
+    unsafe { asm!("sti", "hlt", "cli", options(nostack)) };
+    compiler_fence(Ordering::SeqCst);
+}
+
 /// Halts the CPU for good.
 pub fn halt_forever() -> ! {
     loop {

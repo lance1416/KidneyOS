@@ -1,5 +1,4 @@
-use crate::interrupts::IntrLevel;
-use crate::interrupts::mutex_irq::{MutexIrq, hold_interrupts};
+use crate::interrupts::mutex_irq::MutexIrq;
 use crate::system::running_thread_tid;
 use crate::threading::process::{AtomicTid, Tid};
 use crate::threading::thread_sleep::{thread_sleep, thread_wakeup};
@@ -123,7 +122,8 @@ impl<T: ?Sized> SleepMutex<T> {
 
         loop {
             // Ensure interrupts are disabled *before* we check the lock state,
-            // so that the owner of the Mutex will definitely wake us up when we go to sleep.
+            // so that we are in the wait queue if the owner of the Mutex unlocks
+            // it after that. Its wakeup isn't lost even if we aren't asleep yet.
             let mut wait_queue = self.wait_queue.lock();
             // If no thread is holding the mutex, grab it.
             let _ = self
@@ -140,7 +140,6 @@ impl<T: ?Sized> SleepMutex<T> {
                 wait_queue.push_back(current_tid);
             }
             drop(wait_queue);
-            let _guard = hold_interrupts(IntrLevel::IntrOn);
             thread_sleep();
         }
 

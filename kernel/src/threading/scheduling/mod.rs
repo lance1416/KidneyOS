@@ -6,7 +6,10 @@ pub use scheduler::Scheduler;
 
 use alloc::boxed::Box;
 
-use super::{context_switch::switch_threads, thread_control_block::ThreadStatus};
+use super::{
+    context_switch::switch_threads, thread_control_block::ThreadStatus, thread_sleep::take_wakeup,
+};
+use crate::arch;
 use crate::interrupts::{IntrLevel, intr_get_level, mutex_irq::hold_interrupts};
 use crate::system::unwrap_system;
 
@@ -18,32 +21,35 @@ pub fn create_scheduler() -> Box<dyn Scheduler + Send> {
 }
 
 /// Voluntarily relinquishes control of the CPU to another processor in the scheduler.
+///
+/// If no other thread can run, a thread that can continue just does. One that
+/// can't (it is blocking or dying) waits for an interrupt to make one runnable,
+/// with interrupts enabled. Such an interrupt preempts it like any other thread
+/// (it is still running, after all), so it may get here again after a while.
 fn scheduler_yield(status_for_current_thread: ThreadStatus) {
+    // Restores this thread's interrupt state when it runs again.
     let _guard = hold_interrupts(IntrLevel::IntrOff);
 
-    let mut scheduler = unwrap_system().threads.scheduler.lock();
-
-    while let Some(switch_to) = scheduler.pop() {
-        // Check if the thread is not blocked.
-        match switch_to.as_ref().status {
-            ThreadStatus::Blocked => {
-                // If the thread is blocked, push it back onto the scheduler.
-                scheduler.push(switch_to);
-            }
-            _ => {
-                drop(scheduler);
-                // SAFETY: Threads and Scheduler must be initialized and active.
-                // Interrupts must be disabled.
-                unsafe {
-                    // Do not switch to ourselves.
-                    switch_threads(status_for_current_thread, switch_to);
-                }
-                break;
-            }
+    loop {
+        // With interrupts disabled, nothing can wake this thread between this
+        // check and it being marked as blocked by `switch_threads`.
+        if status_for_current_thread == ThreadStatus::Blocked && take_wakeup() {
+            return;
         }
-    }
 
-    // Note: _guard falls out of scope and re-enables interrupts if previously enabled
+        let switch_to = unwrap_system().threads.scheduler.lock().pop_runnable();
+        if let Some(switch_to) = switch_to {
+            // SAFETY: Threads and Scheduler must be initialized and active.
+            // Interrupts must be disabled.
+            unsafe { switch_threads(status_for_current_thread, switch_to) };
+            return;
+        }
+
+        if status_for_current_thread == ThreadStatus::Ready {
+            return;
+        }
+        arch::wait_for_interrupt();
+    }
 }
 
 // Voluntarily relinquishes control of the CPU and marks current thread as ready.

@@ -182,7 +182,7 @@ Implementing this will be an assignment that students must tackle.
 The simple interface provides the kernel with three main touch points:
 
 * `push` for adding a TCB into the scheduler.
-* `pop` for retrieving the next TCB to run.
+* `pop_runnable` for retrieving the next TCB to run (one that is not blocked).
 * `remove` for killing a thread within the scheduler.
     * This must use the thread ID rather than a TCB due to our (and Rust's) [ownership rules](#ownership-of-threads).
 

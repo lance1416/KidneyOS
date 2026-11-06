@@ -127,6 +127,9 @@ pub struct ThreadControlBlock {
     // Otherwise, we'll run this thread in user mode.
     pub is_kernel: bool,
     pub status: ThreadStatus,
+    /// Whether a wakeup came while the thread wasn't blocked, for its next
+    /// `thread_sleep` (see there).
+    pub wake_pending: bool,
     pub exit_code: Option<i32>,
     pub page_manager: PageManager,
     /// The thread's floating-point and SIMD registers, while it isn't running.
@@ -335,6 +338,7 @@ impl ThreadControlBlock {
             pid, // Potentially could be swapped to directly copy the pid of the running thread
             is_kernel,
             status: ThreadStatus::Invalid,
+            wake_pending: false,
             exit_code: None,
             page_manager,
             fpu: FpuState::new(),
@@ -376,6 +380,7 @@ impl ThreadControlBlock {
                 .pid,
             is_kernel: true,
             status: ThreadStatus::Running,
+            wake_pending: false,
             exit_code: None,
             page_manager,
             fpu: FpuState::new(),

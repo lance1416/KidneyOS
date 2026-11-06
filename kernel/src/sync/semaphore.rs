@@ -1,8 +1,6 @@
 #![allow(unused)]
 
-use crate::interrupts::IntrLevel;
-use crate::interrupts::mutex_irq::hold_interrupts;
-use crate::sync::mutex::TicketMutex;
+use crate::interrupts::mutex_irq::MutexIrq;
 use crate::system::unwrap_system;
 use crate::threading::process::Tid;
 use crate::threading::thread_control_block::ThreadStatus;
@@ -12,7 +10,7 @@ use alloc::sync::Arc;
 
 pub struct SemaphorePermit {
     forgotten: bool,
-    inner: Arc<TicketMutex<SemaphoreInner>>,
+    inner: Arc<MutexIrq<SemaphoreInner>>,
 }
 
 struct SemaphoreInner {
@@ -21,12 +19,15 @@ struct SemaphoreInner {
 }
 
 // Sleep Semaphore
+//
+// Interrupt handlers can post to it, so `inner` can't be held with interrupts
+// enabled.
 pub struct Semaphore {
-    inner: Arc<TicketMutex<SemaphoreInner>>,
+    inner: Arc<MutexIrq<SemaphoreInner>>,
 }
 
 impl SemaphorePermit {
-    fn new(inner: Arc<TicketMutex<SemaphoreInner>>) -> Self {
+    fn new(inner: Arc<MutexIrq<SemaphoreInner>>) -> Self {
         Self {
             forgotten: false,
             inner,
@@ -54,7 +55,7 @@ impl SemaphoreInner {
 impl Semaphore {
     pub fn new(value: i32) -> Self {
         Self {
-            inner: Arc::new(TicketMutex::new(SemaphoreInner {
+            inner: Arc::new(MutexIrq::new(SemaphoreInner {
                 value,
                 queue: VecDeque::new(),
             })),
@@ -93,8 +94,6 @@ impl Semaphore {
                     inner.queue.push_back(running_tid);
                 }
             }
-
-            let _guard = hold_interrupts(IntrLevel::IntrOn);
 
             thread_sleep();
         }

@@ -1,4 +1,5 @@
 use super::super::ThreadControlBlock;
+use super::super::thread_control_block::ThreadStatus;
 use super::scheduler::Scheduler;
 use crate::threading::process::Tid;
 use alloc::{boxed::Box, collections::VecDeque};
@@ -22,8 +23,12 @@ impl Scheduler for FIFOScheduler {
         self.ready_queue.push_back(thread);
     }
 
-    fn pop(&mut self) -> Option<Box<ThreadControlBlock>> {
-        self.ready_queue.pop_front()
+    fn pop_runnable(&mut self) -> Option<Box<ThreadControlBlock>> {
+        let pos = self
+            .ready_queue
+            .iter()
+            .position(|tcb| tcb.status != ThreadStatus::Blocked);
+        self.ready_queue.remove(pos?)
     }
 
     fn remove(&mut self, _tid: Tid) -> Option<Box<ThreadControlBlock>> {

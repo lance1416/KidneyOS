@@ -9,7 +9,8 @@ pub trait Scheduler {
         Self: Sync;
 
     fn push(&mut self, thread: Box<ThreadControlBlock>);
-    fn pop(&mut self) -> Option<Box<ThreadControlBlock>>;
+    /// Takes the next thread that can run (one that isn't blocked), if any.
+    fn pop_runnable(&mut self) -> Option<Box<ThreadControlBlock>>;
     fn remove(&mut self, tid: Tid) -> Option<Box<ThreadControlBlock>>;
     fn get_mut(&mut self, tid: Tid) -> Option<&mut ThreadControlBlock>;
 }
