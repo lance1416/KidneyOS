@@ -234,6 +234,9 @@ pub fn getdents(fd: usize, output: *mut Dirent, size: usize) -> isize {
     let Ok(fd) = FileDescriptor::try_from(fd) else {
         return -EBADF;
     };
+    if !output.is_aligned() {
+        return -EINVAL;
+    }
     if unsafe { get_mut_slice_from_user_space(output.cast::<u8>(), size) }.is_none() {
         return -EFAULT;
     }
