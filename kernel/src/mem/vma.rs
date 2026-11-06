@@ -3,7 +3,7 @@ use crate::kernel_allocator;
 use crate::system::unwrap_system;
 use crate::vfs::INodeNum;
 use alloc::collections::BTreeMap;
-use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET};
+use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, USER_TOP};
 
 /// A list of virtual memory areas for a process
 #[derive(Debug, Default, Clone)]
@@ -181,11 +181,15 @@ impl VMAList {
     }
     /// Add a VMA to the list.
     ///
-    /// `addr` must be a multiple of `PAGE_FRAME_SIZE`. If there is already a VMA anywhere in the address range, returns `false`.
+    /// `addr` must be a multiple of `PAGE_FRAME_SIZE`. If there is already a VMA anywhere in the address range,
+    /// or the range isn't in the user half of the address space, returns `false`.
     #[must_use]
     pub fn add_vma(&mut self, vma: VMA, addr: usize) -> bool {
         assert_eq!(addr % PAGE_FRAME_SIZE, 0);
-        if !self.is_address_range_free(addr..addr + vma.size) {
+        let Some(end) = addr.checked_add(vma.size).filter(|&end| end <= USER_TOP) else {
+            return false;
+        };
+        if !self.is_address_range_free(addr..end) {
             return false;
         }
         self.0.insert(addr, vma);

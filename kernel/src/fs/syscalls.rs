@@ -17,7 +17,7 @@ use crate::user_program::syscall::{
     PROT_WRITE, SEEK_CUR, SEEK_END, SEEK_SET, Stat,
 };
 use crate::vfs::tempfs::TempFS;
-use kidneyos_shared::mem::PAGE_FRAME_SIZE;
+use kidneyos_shared::mem::{PAGE_FRAME_SIZE, USER_TOP};
 
 pub fn open(path: *const u8, flags: usize) -> isize {
     if (flags & !O_CREATE) != 0 {
@@ -463,6 +463,9 @@ pub fn mmap(
     let addr = addr & !(PAGE_FRAME_SIZE - 1);
     // round length up to page frame size
     let length = length.div_ceil(PAGE_FRAME_SIZE) * PAGE_FRAME_SIZE;
+    if !addr.checked_add(length).is_some_and(|end| end <= USER_TOP) {
+        return -EINVAL;
+    }
     let mut root = root_filesystem().lock();
     match root.mmap_file(addr, fd, length, offset, (prot & PROT_WRITE) != 0) {
         Ok(true) => addr.cast_signed(),
