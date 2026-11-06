@@ -28,7 +28,7 @@ cargo-deps = $(wildcard $(filter-out %:,$(shell cat $(1) 2>/dev/null)))
 # here, so this location deliberately ignores CARGO_TARGET_DIR.
 PROGRAMS_TARGET_DIR := $(PROJECT_DIR)/build/programs
 RUST_PROGRAMS_DIR := $(PROGRAMS_TARGET_DIR)/$(PROGRAMS_TRIPLE)/release
-RUST_PROGRAMS := bss example_rust execve pipes sse waitpid
+RUST_PROGRAMS := bad_syscalls bss example_rust execve pipes prot_fault sse user_gp waitpid
 # Cargo reads programs/.cargo/config.toml only when it is run from programs/.
 PROGRAMS_CARGO := cd $(PROJECT_DIR)/programs && CARGO_TARGET_DIR=$(PROGRAMS_TARGET_DIR) cargo
 PROGRAMS_CARGO_INPUTS := $(addprefix $(PROJECT_DIR)/programs/,Cargo.toml Cargo.lock .cargo/config.toml) \

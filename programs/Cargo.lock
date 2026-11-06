@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "bad_syscalls"
+version = "0.1.0"
+dependencies = [
+ "kidneyos-syscalls",
+]
+
+[[package]]
 name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,6 +172,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "prot_fault"
+version = "0.1.0"
+dependencies = [
+ "kidneyos-syscalls",
 ]
 
 [[package]]
@@ -333,6 +347,13 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "user_gp"
+version = "0.1.0"
+dependencies = [
+ "kidneyos-syscalls",
+]
 
 [[package]]
 name = "waitpid"

@@ -1,7 +1,7 @@
 # Every job only orchestrates: the work itself is done by make targets, so
 # `make check` (plus `make smoke-test smoke-programs`,
-# `make KIDNEYOS_TEST=pagefault smoke-test` and `make docs`) locally runs the
-# same checks as this workflow. Setup shared by the jobs is in
+# `make KIDNEYOS_TEST=<test> smoke-test` for each test and `make docs`) locally
+# runs the same checks as this workflow. Setup shared by the jobs is in
 # .github/actions/setup.
 name: CI
 
@@ -99,6 +99,12 @@ jobs:
         run: make smoke-programs
       - name: Check that page faults are handled
         run: make KIDNEYOS_TEST=pagefault smoke-test
+      - name: Check that user faults only kill the process
+        run: |
+          make KIDNEYOS_TEST=usergp smoke-test
+          make KIDNEYOS_TEST=protfault smoke-test
+      - name: Check that bad system calls fail cleanly
+        run: make KIDNEYOS_TEST=badsyscall smoke-test
 
   docs:
     name: Build the docs

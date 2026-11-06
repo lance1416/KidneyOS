@@ -23,6 +23,10 @@ export CARGO_TARGET_DIR
 KIDNEYOS_INIT ?= pipes
 # Set to run a test while booting; see kmain.rs. With KIDNEYOS_TEST=pagefault,
 # the kernel writes to an unmapped address, and the page fault handler maps it.
+# The others boot with user programs that misbehave: usergp and protfault are
+# killed for general protection and protection faults, and badsyscall makes
+# system calls with bad arguments. A program started after them shows that the
+# kernel kept going.
 KIDNEYOS_TEST ?=
 
 # What the smoke test waits for on the serial port (a list of quoted strings;
@@ -30,14 +34,30 @@ KIDNEYOS_TEST ?=
 # root file system, both preemption test threads (one of which only gets to run
 # if the timer preempts the other), init (pipes, by default) making a system
 # call (pipe) and exiting successfully, and the shell prompt.
+# In the tests where a process being killed is the point, what ends them early
+# (see build-support/qemu-smoke.bash) is a panic or a process getting away with
+# it, which exits with a nonzero code (a killed one has -1).
+SMOKE_FATAL_USER := panicked at|boot error|exited with code [1-9]
 ifeq ($(KIDNEYOS_TEST),)
 SMOKE_EXPECT := 'IDE subsystem initialized' 'Root filesystem mounted' \
 	'was preempted while spinning' 'started after thread' \
 	'syscall number 0x2A' 'exited with code 0' 'kidney:/$$'
 else ifeq ($(KIDNEYOS_TEST),pagefault)
 SMOKE_EXPECT := 'page fault: cr2=0x00000BADBEEF0128' 'KIDNEYOS_TEST=pagefault: passed'
+else ifeq ($(KIDNEYOS_TEST),usergp)
+override KIDNEYOS_INIT := user_gp,user_gp,user_gp,user_gp,bss
+SMOKE_EXPECT := '4*killed: general protection fault' 'exited with code 0'
+SMOKE_FATAL := $(SMOKE_FATAL_USER)
+else ifeq ($(KIDNEYOS_TEST),protfault)
+override KIDNEYOS_INIT := prot_fault,prot_fault,bss
+SMOKE_EXPECT := '2*killed: page fault' 'exited with code 0'
+SMOKE_FATAL := $(SMOKE_FATAL_USER)
+else ifeq ($(KIDNEYOS_TEST),badsyscall)
+override KIDNEYOS_INIT := bad_syscalls,bss
+SMOKE_EXPECT := '2*exited with code 0'
+SMOKE_FATAL := $(SMOKE_FATAL_USER)
 else
-$(error Unknown KIDNEYOS_TEST: $(KIDNEYOS_TEST) (expected pagefault))
+$(error Unknown KIDNEYOS_TEST: $(KIDNEYOS_TEST) (expected pagefault, usergp, protfault or badsyscall))
 endif
 
 KERNEL_TARGET := x86_64-unknown-none
@@ -74,7 +94,7 @@ help: ## Show this help
 	@echo
 	@echo 'Variables: PROFILE=dev|release, QEMU_DEBUG=<qemu -d items>,'
 	@echo '           BOCHS_DISPLAY=<bochs display_library>, KIDNEYOS_INIT=<program>[,<program>...],'
-	@echo '           KIDNEYOS_TEST=pagefault'
+	@echo '           KIDNEYOS_TEST=pagefault|usergp|protfault|badsyscall'
 
 .PHONY: iso
 iso: $(ISO) ## Build the bootable ISO (build/kidneyos.iso); the default target
@@ -171,7 +191,7 @@ run-qemu-ng-gdb: $(ISO) $(DISK) $(KERNEL_SYM) ## run-qemu-ng, paused until GDB a
 
 SMOKE_TIMEOUT ?= 120
 
-SMOKE_TEST := build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) build/smoke-test.log \
+SMOKE_TEST := $(if $(SMOKE_FATAL),SMOKE_FATAL='$(SMOKE_FATAL)') build-support/qemu-smoke.bash $(QEMU) $(SMOKE_TIMEOUT) build/smoke-test.log \
 	$(SMOKE_EXPECT) -- $(QEMU_FLAGS)
 
 .PHONY: smoke-test

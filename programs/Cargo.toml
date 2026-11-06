@@ -5,7 +5,17 @@
 # Build with `make programs` from the repository root. Binaries end up in
 # build/programs/x86_64-unknown-linux-gnu/release/.
 [workspace]
-members = ["bss", "example_rust", "execve", "pipes", "sse", "waitpid"]
+members = [
+    "bad_syscalls",
+    "bss",
+    "example_rust",
+    "execve",
+    "pipes",
+    "prot_fault",
+    "sse",
+    "user_gp",
+    "waitpid",
+]
 resolver = "3"
 
 [workspace.package]

@@ -97,6 +97,8 @@ extern "C" fn kmain(magic: u32, multiboot2_info_phys: usize) -> ! {
     match TEST {
         None | Some("") => {}
         Some("pagefault") => page_fault_test(),
+        // These only choose the init programs, see the Makefile.
+        Some("usergp" | "protfault" | "badsyscall") => {}
         Some(test) => panic!("unknown KIDNEYOS_TEST {test:?}"),
     }
 
