@@ -13,7 +13,7 @@ use crate::system::{running_thread_pid, running_thread_ppid, running_thread_tid,
 use crate::threading::process::Pid;
 use crate::threading::process_functions;
 use crate::threading::scheduling::{scheduler_yield_and_continue, scheduler_yield_and_die};
-use crate::threading::thread_control_block::ThreadControlBlock;
+use crate::threading::thread_control_block::{ThreadControlBlock, ThreadElfCreateError};
 use crate::threading::thread_sleep::{take_wakeup, thread_sleep};
 use crate::user_program::elf::Elf;
 use crate::user_program::random::getrandom;
@@ -129,8 +129,10 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
 
             let Some(elf) = elf else { return -ENOEXEC };
 
-            let Ok(control) = ThreadControlBlock::new_from_elf(elf, &system.process) else {
-                return -ENOEXEC;
+            let control = match ThreadControlBlock::new_from_elf(elf, &system.process) {
+                Ok(control) => control,
+                Err(ThreadElfCreateError::OutOfMemory) => return -ENOMEM,
+                Err(_) => return -ENOEXEC,
             };
 
             system.threads.scheduler.lock().push(Box::new(control));

@@ -3,7 +3,9 @@ use crate::arch::{FpuState, PrepareThreadContext, SwitchThreadsContext};
 use crate::fs::fs_manager::RootFileSystem;
 use crate::system::{running_thread_ppid, unwrap_system};
 use crate::threading::process::{Pid, ProcessState, Tid};
-use crate::user_program::elf::{ElfArchitecture, ElfClass, ElfProgramType, ElfUsage};
+use crate::user_program::elf::{
+    ElfArchitecture, ElfClass, ElfProgramHeader, ElfProgramType, ElfUsage,
+};
 use crate::{
     Mutex,
     fs::fs_manager::FileSystemID,
@@ -17,6 +19,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::{
     mem::size_of,
+    ops::Range,
     ptr::{NonNull, copy_nonoverlapping, write_bytes},
 };
 use kidneyos_shared::mem::{PAGE_FRAME_SIZE, PHYS_MAP_OFFSET, USER_TOP};
@@ -141,8 +144,18 @@ pub enum ThreadElfCreateError {
     UnsupportedArchitecture,
     NotExecutable,
     InvalidEntryPoint,
-    /// A loadable segment doesn't fit in the user part of the address space.
+    /// A loadable segment doesn't fit in the user part of the address space,
+    /// or overlaps another one.
     InvalidSegment,
+    /// There isn't enough memory for the loadable segments.
+    OutOfMemory,
+}
+
+/// A loadable segment of a program: the virtual addresses it is mapped at, and
+/// the frames (in the direct map) holding it.
+struct LoadedSegment {
+    range: Range<usize>,
+    frames: NonNull<u8>,
 }
 
 impl ThreadControlBlock {
@@ -163,6 +176,30 @@ impl ThreadControlBlock {
             return Err(ThreadElfCreateError::UnsupportedArchitecture);
         }
 
+        let entry = usize::try_from(elf.header.program_entry)
+            .map_err(|_| ThreadElfCreateError::InvalidEntryPoint)?;
+        if entry >= USER_TOP {
+            return Err(ThreadElfCreateError::InvalidEntryPoint);
+        }
+        let entry =
+            NonNull::new(entry as *mut u8).ok_or(ThreadElfCreateError::InvalidEntryPoint)?;
+
+        let mut page_manager = PageManager::default();
+        let mut segments = Vec::new();
+        for program_header in &elf.program_headers {
+            if program_header.program_type != ElfProgramType::Load {
+                continue;
+            }
+            if let Err(error) = Self::load_segment(program_header, &mut page_manager, &mut segments)
+            {
+                for segment in segments {
+                    // SAFETY: Nothing runs in this address space yet.
+                    unsafe { kernel_allocator().frame_dealloc(segment.frames) };
+                }
+                return Err(error);
+            }
+        }
+
         let any_running_thread = unwrap_system().threads.running_thread.lock().is_some();
         let ppid = if !any_running_thread {
             0
@@ -171,100 +208,108 @@ impl ThreadControlBlock {
         };
         let pcb =
             ProcessControlBlock::create(state, &mut unwrap_system().root_filesystem.lock(), ppid);
-        let pcb = pcb.lock();
-        let pid = pcb.pid;
-        let mut page_manager = PageManager::default();
+        let pid = pcb.lock().pid;
 
-        for program_header in elf.program_headers {
-            if program_header.program_type != ElfProgramType::Load {
-                continue;
-            }
-
-            let virtual_address = usize::try_from(program_header.virtual_address)
-                .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
-            let memory_size = usize::try_from(program_header.memory_size)
-                .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
-
-            // Some ELF files have off-alignment segments (off 4KB).
-            // We need to pad this space with zeroes.
-            let segment_virtual_frame_start = virtual_address / PAGE_FRAME_SIZE;
-            let segment_virtual_start = segment_virtual_frame_start * PAGE_FRAME_SIZE;
-            let segment_padding = virtual_address % PAGE_FRAME_SIZE;
-            // The segment occupies `memory_size` bytes in memory, of which only
-            // the first `data.len()` (the file size) come from the file; the rest
-            // (e.g. .bss) must be zero.
-            // The parser guarantees memory_size >= data.len().
-            let segment_padded_size = segment_padding
-                .checked_add(memory_size)
-                .ok_or(ThreadElfCreateError::InvalidSegment)?;
-
-            let frames = segment_padded_size.div_ceil(PAGE_FRAME_SIZE);
-
-            // The mapped range must lie entirely in user space.
-            let segment_virtual_end = frames
-                .checked_mul(PAGE_FRAME_SIZE)
-                .and_then(|len| len.checked_add(segment_virtual_start))
-                .ok_or(ThreadElfCreateError::InvalidSegment)?;
-            if segment_virtual_end > USER_TOP {
-                return Err(ThreadElfCreateError::InvalidSegment);
-            }
-
-            unsafe {
-                // TODO: Save this physical address somewhere so we can deallocate
-                // it when dropping the thread.
-                let kernel_virt_addr = kernel_allocator()
-                    .frame_alloc(frames)
-                    .expect("no more frames...")
-                    .cast::<u8>()
-                    .as_ptr();
-                // Integer arithmetic: PHYS_MAP_OFFSET is larger than isize::MAX, so
-                // `ptr::sub(PHYS_MAP_OFFSET)` would be UB (and trips std's debug UB checks).
-                let phys_addr = kernel_virt_addr as usize - PHYS_MAP_OFFSET;
-
-                // TODO: Throw an error if this range overlaps any previously mapped
-                // ranges, since `map_range` requires that the input range has not
-                // already been mapped.
-
-                // Map the physical address obtained by the allocation above to the
-                // virtual address assigned by the ELF header.
-                // W^X: only read-only segments marked executable (normally
-                // .text) can be executed.
-                page_manager.map_range_flags(
-                    phys_addr,
-                    segment_virtual_start,
-                    frames * PAGE_FRAME_SIZE,
-                    kidneyos_shared::paging::PageFlags {
-                        write: program_header.writable,
-                        user: true,
-                        exec: program_header.executable && !program_header.writable,
-                    },
-                );
-
-                // Zero all mapped frames: the padding before the segment, the
-                // part of the segment not backed by the file, and the sliver
-                // after the segment up to the end of its last frame.
-                write_bytes(kernel_virt_addr, 0, frames * PAGE_FRAME_SIZE);
-
-                // Load so we can write to the virtual addresses mapped above.
-                copy_nonoverlapping(
-                    program_header.data.as_ptr(),
-                    kernel_virt_addr.add(segment_padding),
-                    program_header.data.len(),
-                );
-            }
-        }
-
-        let entry = usize::try_from(elf.header.program_entry)
-            .map_err(|_| ThreadElfCreateError::InvalidEntryPoint)?;
-        if entry >= USER_TOP {
-            return Err(ThreadElfCreateError::InvalidEntryPoint);
-        }
         Ok(ThreadControlBlock::new_with_page_manager(
-            NonNull::new(entry as *mut u8).ok_or(ThreadElfCreateError::InvalidEntryPoint)?,
+            entry,
             pid,
             page_manager,
             state,
         ))
+    }
+
+    /// Allocates memory for a loadable segment, maps it in `page_manager` and
+    /// fills it, adding it to `segments` (the ones loaded so far).
+    fn load_segment(
+        program_header: &ElfProgramHeader,
+        page_manager: &mut PageManager,
+        segments: &mut Vec<LoadedSegment>,
+    ) -> Result<(), ThreadElfCreateError> {
+        let virtual_address = usize::try_from(program_header.virtual_address)
+            .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
+        let memory_size = usize::try_from(program_header.memory_size)
+            .map_err(|_| ThreadElfCreateError::InvalidSegment)?;
+
+        // Some ELF files have off-alignment segments (off 4KB).
+        // We need to pad this space with zeroes.
+        let segment_virtual_frame_start = virtual_address / PAGE_FRAME_SIZE;
+        let segment_virtual_start = segment_virtual_frame_start * PAGE_FRAME_SIZE;
+        let segment_padding = virtual_address % PAGE_FRAME_SIZE;
+        // The segment occupies `memory_size` bytes in memory, of which only
+        // the first `data.len()` (the file size) come from the file; the rest
+        // (e.g. .bss) must be zero.
+        // The parser guarantees memory_size >= data.len().
+        let segment_padded_size = segment_padding
+            .checked_add(memory_size)
+            .ok_or(ThreadElfCreateError::InvalidSegment)?;
+
+        let frames = segment_padded_size.div_ceil(PAGE_FRAME_SIZE);
+        if frames == 0 {
+            return Ok(());
+        }
+
+        // The mapped range must lie entirely in user space.
+        let segment_virtual_end = frames
+            .checked_mul(PAGE_FRAME_SIZE)
+            .and_then(|len| len.checked_add(segment_virtual_start))
+            .ok_or(ThreadElfCreateError::InvalidSegment)?;
+        if segment_virtual_end > USER_TOP {
+            return Err(ThreadElfCreateError::InvalidSegment);
+        }
+
+        // `map_range_flags` requires that the range isn't mapped yet.
+        let range = segment_virtual_start..segment_virtual_end;
+        if segments
+            .iter()
+            .any(|segment| segment.range.start < range.end && range.start < segment.range.end)
+        {
+            return Err(ThreadElfCreateError::InvalidSegment);
+        }
+
+        unsafe {
+            // TODO: Save this physical address somewhere so we can deallocate
+            // it when dropping the thread.
+            let frames_ptr = kernel_allocator()
+                .frame_alloc(frames)
+                .map_err(|_| ThreadElfCreateError::OutOfMemory)?;
+            segments.push(LoadedSegment {
+                range,
+                frames: frames_ptr,
+            });
+            let kernel_virt_addr = frames_ptr.as_ptr();
+            // Integer arithmetic: PHYS_MAP_OFFSET is larger than isize::MAX, so
+            // `ptr::sub(PHYS_MAP_OFFSET)` would be UB (and trips std's debug UB checks).
+            let phys_addr = kernel_virt_addr as usize - PHYS_MAP_OFFSET;
+
+            // Map the physical address obtained by the allocation above to the
+            // virtual address assigned by the ELF header.
+            // W^X: only read-only segments marked executable (normally
+            // .text) can be executed.
+            page_manager.map_range_flags(
+                phys_addr,
+                segment_virtual_start,
+                frames * PAGE_FRAME_SIZE,
+                kidneyos_shared::paging::PageFlags {
+                    write: program_header.writable,
+                    user: true,
+                    exec: program_header.executable && !program_header.writable,
+                },
+            );
+
+            // Zero all mapped frames: the padding before the segment, the
+            // part of the segment not backed by the file, and the sliver
+            // after the segment up to the end of its last frame.
+            write_bytes(kernel_virt_addr, 0, frames * PAGE_FRAME_SIZE);
+
+            // Load so we can write to the virtual addresses mapped above.
+            copy_nonoverlapping(
+                program_header.data.as_ptr(),
+                kernel_virt_addr.add(segment_padding),
+                program_header.data.len(),
+            );
+        }
+
+        Ok(())
     }
 
     pub fn new_with_page_manager(
