@@ -59,6 +59,30 @@ macro_rules! halt {
     }};
 }
 
+/// The frames the very first allocation (the core map, see
+/// [`KernelAllocator::init`]) takes for `size` bytes with alignment `align`.
+fn first_allocation_frames(size: usize, align: usize) -> usize {
+    (size + align).div_ceil(PAGE_FRAME_SIZE)
+}
+
+/// How many of `total_frames` free frames can be handed out, given that the
+/// core map, with an entry for each of them, comes out of `total_frames` too.
+fn usable_frames(total_frames: usize) -> usize {
+    let core_map_frames = |frames: usize| {
+        first_allocation_frames(
+            frames * size_of::<CoreMapEntry>(),
+            align_of::<CoreMapEntry>(),
+        )
+    };
+    // An estimate which ignores that the core map takes up whole frames, so
+    // it is at most a few frames off.
+    let mut frames = total_frames * PAGE_FRAME_SIZE / (size_of::<CoreMapEntry>() + PAGE_FRAME_SIZE);
+    while frames > 0 && frames + core_map_frames(frames) > total_frames {
+        frames -= 1;
+    }
+    frames
+}
+
 enum KernelAllocatorState {
     DeInitialized,
     SetupState {
@@ -69,6 +93,9 @@ enum KernelAllocatorState {
     },
 }
 
+/// The kernel's allocator. There is one CPU, so what keeps threads and
+/// interrupt handlers from using it at the same time is that everything that
+/// uses `state` holds interrupts off.
 pub struct KernelAllocator {
     state: UnsafeCell<KernelAllocatorState>,
 }
@@ -119,8 +146,8 @@ impl KernelAllocator {
         dummy_allocator.set_start_address(frames_base_address);
         dummy_allocator.set_end_address(frames_ceil_address);
 
-        let num_frames_in_system = (frames_ceil_address - frames_base_address)
-            / (size_of::<CoreMapEntry>() + PAGE_FRAME_SIZE);
+        let num_frames_in_system =
+            usable_frames((frames_ceil_address - frames_base_address) / PAGE_FRAME_SIZE);
 
         // This should ALWAYS be the first global allocation to take place - should use dummy allocator
         //
@@ -220,7 +247,7 @@ unsafe impl GlobalAlloc for KernelAllocator {
                     return ptr::null_mut();
                 }
 
-                let num_frames_requested = (size + align).div_ceil(PAGE_FRAME_SIZE);
+                let num_frames_requested = first_allocation_frames(size, align);
 
                 let Ok(region) = dummy_allocator.alloc(num_frames_requested) else {
                     halt!(
@@ -275,6 +302,26 @@ unsafe impl GlobalAlloc for KernelAllocator {
             subblock_allocator.deallocate(ptr, layout);
 
             TOTAL_NUM_DEALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usable_frames_and_core_map_fit() {
+        let core_map_frames = |frames: usize| {
+            first_allocation_frames(
+                frames * size_of::<CoreMapEntry>(),
+                align_of::<CoreMapEntry>(),
+            )
+        };
+        for total_frames in (1..20_000).chain([1 << 20, (1 << 20) + 1, 1 << 24]) {
+            let frames = usable_frames(total_frames);
+            assert!(frames + core_map_frames(frames) <= total_frames);
+            assert!(frames + 1 + core_map_frames(frames + 1) > total_frames);
         }
     }
 }

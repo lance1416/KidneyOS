@@ -100,23 +100,27 @@ pub fn init_frames(memory_map: &MemoryMapTag, reserved: &[PhysRegion]) -> Physic
 
     let mut frames = FRAMES.lock();
     for entry in memory_map.entries() {
-        let region = PhysRegion {
-            start: entry.base_addr - entry.base_addr % PAGE_SIZE,
-            end: entry
-                .base_addr
-                .saturating_add(entry.length)
-                .next_multiple_of(PAGE_SIZE),
-        };
-        direct_map.add(region).expect("too many memory regions");
+        let entry_end = entry.base_addr.saturating_add(entry.length);
+        // The direct map covers every page with a part of the region in it.
+        direct_map
+            .add(PhysRegion {
+                start: entry.base_addr - entry.base_addr % PAGE_SIZE,
+                end: entry_end.next_multiple_of(PAGE_SIZE),
+            })
+            .expect("too many memory regions");
 
         if entry.r#type == MEMORY_AVAILABLE {
             println!(
                 "  available: {:#014X}..{:#014X}",
-                entry.base_addr,
-                entry.base_addr.saturating_add(entry.length)
+                entry.base_addr, entry_end
             );
-            // Leave the first 1MiB to the BIOS and friends.
-            if let Some(region) = region.clamp(MB as u64, u64::MAX) {
+            let available = PhysRegion {
+                start: entry.base_addr,
+                end: entry_end,
+            };
+            // Leave the first 1MiB to the BIOS and friends. Only frames that
+            // are entirely in the region are allocated (see add_region).
+            if let Some(region) = available.clamp(MB as u64, u64::MAX) {
                 frames.add_region(region).expect("too many memory regions");
             }
         }
