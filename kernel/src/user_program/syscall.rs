@@ -7,7 +7,8 @@ use crate::fs::syscalls::{
 };
 use crate::interrupts::{intr_disable, intr_enable};
 use crate::mem::util::{
-    CStrError, get_cstr_from_user_space, get_mut_from_user_space, get_ref_from_user_space,
+    CStrError, get_cstr_from_user_space, get_mut_from_user_space, get_mut_slice_from_user_space,
+    get_ref_from_user_space,
 };
 use crate::system::{running_thread_pid, running_thread_ppid, running_thread_tid, unwrap_system};
 use crate::threading::process::Pid;
@@ -19,7 +20,6 @@ use crate::user_program::elf::Elf;
 use crate::user_program::random::getrandom;
 use crate::user_program::time::{CLOCK_MONOTONIC, CLOCK_REALTIME, Timespec, get_rtc, get_tsc};
 use alloc::boxed::Box;
-use core::slice::from_raw_parts_mut;
 use kidneyos_shared::println;
 pub use kidneyos_syscalls::defs::*;
 
@@ -167,12 +167,12 @@ pub extern "C" fn handler(syscall_number: usize, arg0: usize, arg1: usize, arg2:
             0
         }
         SYS_GETRANDOM => {
-            let Some(buffer_ptr) = (unsafe { get_mut_from_user_space(arg0 as *mut u8) }) else {
-                return -1;
+            let Some(buffer) = (unsafe { get_mut_slice_from_user_space(arg0 as *mut u8, arg1) })
+            else {
+                return -EFAULT;
             };
 
-            let buffer = unsafe { from_raw_parts_mut(buffer_ptr, arg1) };
-            getrandom(buffer, arg1, arg2)
+            getrandom(buffer, arg2)
         }
         SYS_MMAP => {
             let Some(options) = (unsafe { get_ref_from_user_space(arg0 as *const MMapOptions) })

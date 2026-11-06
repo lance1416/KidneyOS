@@ -19,33 +19,18 @@ fn generate_random_i32() -> Option<i32> {
 }
 
 /// Fills a buffer with random bytes from the CPU's RDRAND instruction.
-/// Returns the number of bytes written, or -1 if an error occurs.
+/// Returns the number of bytes written.
 /// Currently no flags are implemented, if there is no random data available,
 /// the random data generated so far is returned.
-pub fn getrandom(buffer: &mut [u8], length: usize, _flags: usize) -> isize {
+pub fn getrandom(buffer: &mut [u8], _flags: usize) -> isize {
     let mut bytes_written: usize = 0;
-    let chunks = length / 4;
-    let remainder = length % 4;
 
-    for i in 0..chunks {
-        match generate_random_i32() {
-            Some(random_int) => {
-                let random_bytes = random_int.to_le_bytes();
-                buffer[i * 4..i * 4 + 4].copy_from_slice(&random_bytes);
-            }
-            None => return bytes_written.try_into().expect("byte count fits in isize"),
-        }
-    }
-
-    // Handle any remaining bytes if length is not a multiple of 4
-    if remainder > 0
-        && let Some(random_int) = generate_random_i32()
-    {
-        let random_bytes = random_int.to_le_bytes();
-        for (i, &byte) in random_bytes.iter().enumerate().take(remainder) {
-            buffer[chunks * 4 + i] = byte;
-        }
-        bytes_written += remainder;
+    for chunk in buffer.chunks_mut(size_of::<i32>()) {
+        let Some(random_int) = generate_random_i32() else {
+            break;
+        };
+        chunk.copy_from_slice(&random_int.to_le_bytes()[..chunk.len()]);
+        bytes_written += chunk.len();
     }
 
     bytes_written.try_into().expect("byte count fits in isize")
