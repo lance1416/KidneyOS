@@ -70,7 +70,10 @@ impl<T: ?Sized> TicketMutex<T> {
         let ticket = self.next_ticket.fetch_add(1, Ordering::Relaxed);
 
         while self.next_serving.load(Ordering::Acquire) != ticket {
-            // We need to yield to something else, otherwise we have to panic!
+            // The holder can only be another thread, so let the timer preempt
+            // this one, even if interrupts are disabled here (they are again
+            // once _guard is dropped). `sti` only takes effect after the next
+            // instruction, which is why there has to be one.
             let _guard = hold_interrupts(IntrLevel::IntrOn);
 
             core::hint::spin_loop();

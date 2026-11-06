@@ -5,13 +5,12 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-/// A guard for withholding interrupts.
-#[derive(Default)]
+/// A guard for withholding interrupts, with whether they were enabled before.
 pub struct InterruptsGuard(bool);
 
 impl !Send for InterruptsGuard {}
 
-/// Prevents interrupts from occurring until the `InterruptsGuard` is dropped.
+/// Sets whether interrupts can occur until the `InterruptsGuard` is dropped.
 /// After it is dropped, the interrupts are returned to the previous state.
 pub fn hold_interrupts(level: IntrLevel) -> InterruptsGuard {
     let enabled = intr_get_level() == IntrLevel::IntrOn;
@@ -27,6 +26,8 @@ impl Drop for InterruptsGuard {
     fn drop(&mut self) {
         if self.0 {
             intr_enable();
+        } else {
+            intr_disable();
         }
     }
 }
