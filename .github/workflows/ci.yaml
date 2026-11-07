@@ -1,6 +1,7 @@
 # Every job only orchestrates: the work itself is done by make targets, so
 # `make check` (plus `make smoke-test smoke-programs`,
-# `make KIDNEYOS_TEST=<test> smoke-test` for each test and `make docs`) locally
+# `make KIDNEYOS_TEST=<test> smoke-test` for each test,
+# `make PROFILE=release smoke-test` and `make docs`) locally
 # runs the same checks as this workflow. Setup shared by the jobs is in
 # .github/actions/setup.
 name: CI
@@ -105,6 +106,10 @@ jobs:
           make KIDNEYOS_TEST=protfault smoke-test
       - name: Check that bad system calls fail cleanly
         run: make KIDNEYOS_TEST=badsyscall smoke-test
+      # Optimizations can turn undefined behaviour in the kernel into wrong
+      # results that a debug build doesn't show.
+      - name: Boot a release build
+        run: make PROFILE=release smoke-test
 
   docs:
     name: Build the docs

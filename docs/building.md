@@ -42,3 +42,5 @@ There are two things to note here:
 `make KIDNEYOS_TEST=pagefault smoke-test` builds a kernel that also makes a page fault on purpose, and checks that the page fault handler reports it (with the faulting address) and recovers.
 
 Three more tests boot with user programs that misbehave, and check that only they suffer: a program started after them must still run, and a kernel panic fails the test. `make KIDNEYOS_TEST=usergp smoke-test` raises general protection faults from user mode (`cli`, `hlt`, `int3` and a non-canonical address), `make KIDNEYOS_TEST=protfault smoke-test` makes protection faults on present pages (executing the stack and writing to a read-only mapping), and `make KIDNEYOS_TEST=badsyscall smoke-test` makes system calls with bad arguments and checks their results.
+
+`make PROFILE=release smoke-test` boots a kernel built with optimizations. The compiler relies on the kernel not having undefined behaviour (such as two `&mut` references to the same thing) much more when it optimizes, so this catches mistakes that a debug build still runs through.
