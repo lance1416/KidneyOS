@@ -3,8 +3,10 @@
 use crate::block::block_core::{BLOCK_SECTOR_SIZE, BlockSector};
 use crate::sync::semaphore::Semaphore;
 use alloc::string::String;
+use core::sync::atomic::{AtomicBool, Ordering};
 use kidneyos_shared::println;
 use kidneyos_shared::serial::{inb, insw, outb, outsw};
+use spin::LazyLock;
 
 use crate::drivers::ata::ata_timer::{msleep, nsleep, usleep};
 
@@ -120,6 +122,63 @@ const CTL_OFFSET: u16 = 0x206;
 
 // -------------------------------------------------------------------------------------------------
 
+/// The part of a channel that its interrupt handler uses. It isn't behind the
+/// channel's `SleepMutex` (see `CHANNELS`), which the thread driving the
+/// channel holds while it waits for the interrupt: an interrupt handler can't
+/// wait for a sleeping lock, since that would put whichever thread it
+/// interrupted to sleep inside the handler, and the interrupt would never be
+/// handled.
+pub struct ChannelInterrupt {
+    /// The status register, read to acknowledge the interrupt.
+    reg_status: u16,
+    /// True if an interrupt is expected, false if any interrupt would be spurious
+    expecting_interrupt: AtomicBool,
+    /// Up'd by interrupt handler
+    completion_wait: Semaphore,
+}
+
+/// The interrupt state of each channel, by channel number.
+pub static CHANNEL_INTERRUPTS: LazyLock<[ChannelInterrupt; 2]> = LazyLock::new(|| {
+    [0, 1].map(|channel_num| ChannelInterrupt {
+        reg_status: reg_base(channel_num) + 7,
+        expecting_interrupt: AtomicBool::new(false),
+        completion_wait: Semaphore::new(0),
+    })
+});
+
+impl ChannelInterrupt {
+    /// Handles an interrupt from this channel: acknowledges it and wakes up
+    /// the thread waiting for it. Returns false if no interrupt was expected.
+    ///
+    /// # Safety
+    ///
+    /// Must be called for this channel's interrupt.
+    pub unsafe fn handle(&self) -> bool {
+        // A command raises one interrupt, so any further one is spurious.
+        if !self.expecting_interrupt.swap(false, Ordering::AcqRel) {
+            return false;
+        }
+        // Acknowledge the interrupt
+        unsafe { inb(self.reg_status) };
+        // Wake up the waiting thread
+        self.completion_wait.post();
+        true
+    }
+}
+
+/// The base I/O port of channel `channel_num`.
+const fn reg_base(channel_num: u8) -> u16 {
+    // https://wiki.osdev.org/ATA_PIO_Mode#Primary.2FSecondary_Bus
+    match channel_num {
+        // Primary ATA Bus: 0x1F0 - 0x1F7
+        0 => 0x1F0,
+        // Secondary ATA Bus: 0x170 - 0x177
+        1 => 0x170,
+        // Invalid
+        _ => panic!(),
+    }
+}
+
 /// An ATA channel (aka controller)
 ///
 /// Each channel can control up to two disks
@@ -130,12 +189,6 @@ pub struct AtaChannel {
     reg_base: u16,
     /// Interrupt in use
     irq: u8,
-
-    /// True if an interrupt is expected, false if any interrupt would be spurious
-    expecting_interrupt: bool,
-
-    /// Up'd by interrupt handler
-    completion_wait: Semaphore,
 
     /// The devices on this channel
     // Master
@@ -376,7 +429,9 @@ impl AtaChannel {
     /// This function must be called with interrupts enabled.
     pub unsafe fn issue_pio_command(&mut self, command: u8) {
         unsafe {
-            self.expecting_interrupt = true;
+            self.interrupt()
+                .expecting_interrupt
+                .store(true, Ordering::Release);
             outb(self.reg_command(), command);
         }
     }
@@ -495,15 +550,7 @@ impl AtaChannel {
     pub fn new(channel_num: u8) -> AtaChannel {
         let name: [char; 8] = ['\0'; 8];
 
-        // https://wiki.osdev.org/ATA_PIO_Mode#Primary.2FSecondary_Bus
-        let reg_base = match channel_num {
-            // Primary ATA Bus: 0x1F0 - 0x1F7
-            0 => 0x1F0,
-            // Secondary ATA Bus: 0x170 - 0x177
-            1 => 0x170,
-            // Invalid
-            _ => panic!(),
-        };
+        let reg_base = reg_base(channel_num);
         let irq = match channel_num {
             // Primary ATA Bus: IRQ 14
             // 0 => 0x20 + 14,
@@ -522,8 +569,6 @@ impl AtaChannel {
             name,
             reg_base,
             irq,
-            expecting_interrupt: false,
-            completion_wait: Semaphore::new(0),
             d0_name,
             d0_is_ata: false,
             d1_name,
@@ -590,20 +635,26 @@ impl AtaChannel {
         self.irq
     }
 
+    /// The state this channel shares with its interrupt handler.
+    fn interrupt(&self) -> &'static ChannelInterrupt {
+        &CHANNEL_INTERRUPTS[usize::from(self.channel_num)]
+    }
+
     pub fn is_expect_interrupt(&self) -> bool {
-        self.expecting_interrupt
+        self.interrupt().expecting_interrupt.load(Ordering::Acquire)
     }
 
     pub fn sem_down(&self) {
-        self.completion_wait.acquire().forget();
+        self.interrupt().completion_wait.acquire().forget();
     }
 
     pub fn sem_up(&self) {
-        self.completion_wait.post();
+        self.interrupt().completion_wait.post();
     }
 
     pub fn sem_try_down(&self) -> bool {
-        self.completion_wait
+        self.interrupt()
+            .completion_wait
             .try_acquire()
             .map(|x| x.forget())
             .is_some()

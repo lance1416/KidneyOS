@@ -6,7 +6,7 @@
 
 use crate::block::block_core::{BLOCK_SECTOR_SIZE, BlockSector, BlockType};
 use crate::block::partitions::partition_core::partition_scan;
-use crate::drivers::ata::ata_channel::AtaChannel;
+use crate::drivers::ata::ata_channel::{AtaChannel, CHANNEL_INTERRUPTS};
 use crate::drivers::ata::ata_device::AtaDevice;
 use crate::interrupts::{IntrLevel, intr_get_level};
 use crate::sync::mutex::sleep::SleepMutex;
@@ -54,6 +54,9 @@ pub extern "C" fn ide_init() -> i32 {
 
     println!("Initializing IDE subsystem");
 
+    // Not on the first interrupt, in its handler.
+    LazyLock::force(&CHANNEL_INTERRUPTS);
+
     let mut present: [[bool; 2]; 2] = [[false; 2]; 2];
 
     for (i, c) in CHANNELS.iter().enumerate() {
@@ -96,39 +99,43 @@ pub extern "C" fn ide_init() -> i32 {
 /// This function must be called with interrupts enabled
 unsafe fn identify_ata_device(c: &SleepMutex<AtaChannel>, dev_no: u8, block: bool) {
     unsafe {
-        let _index: usize;
-        let channel: &mut AtaChannel = &mut c.lock();
-        let mut id: [u8; BLOCK_SECTOR_SIZE] = [0; BLOCK_SECTOR_SIZE];
+        // The channel is unlocked again before the partitions are read below,
+        // which locks it for each sector.
+        let (channel_num, capacity, name) = {
+            let channel: &mut AtaChannel = &mut c.lock();
+            let mut id: [u8; BLOCK_SECTOR_SIZE] = [0; BLOCK_SECTOR_SIZE];
 
-        // Send the IDENTIFY DEVICE command, wait for an interrupt indicating the device's response
-        // is ready, and read the data into our buffer.
-        channel.select_device_wait(dev_no, block);
-        channel.issue_pio_command(ATA_IDENTIFY_DEVICE);
-        channel.sem_down();
+            // Send the IDENTIFY DEVICE command, wait for an interrupt indicating the device's response
+            // is ready, and read the data into our buffer.
+            channel.select_device_wait(dev_no, block);
+            channel.issue_pio_command(ATA_IDENTIFY_DEVICE);
+            channel.sem_down();
 
-        if !channel.wait_while_busy(block) {
-            channel.set_is_ata(dev_no, false);
-            // println!("channel {} device {} is not ata", c.channel_num, dev_no);
-            return;
-        }
-        channel.read_sector(&mut id);
+            if !channel.wait_while_busy(block) {
+                channel.set_is_ata(dev_no, false);
+                // println!("channel {} device {} is not ata", c.channel_num, dev_no);
+                return;
+            }
+            channel.read_sector(&mut id);
 
-        // Calculate capacity: the number of 28-bit LBA sectors, a 32-bit
-        // value (words 60 and 61).
-        let capacity: BlockSector = u32::from_le_bytes(
-            id[120..124]
-                .try_into()
-                .expect("IDENTIFY capacity field is 4 bytes"),
-        );
-        let name = if dev_no == 0 {
-            channel.get_d0_name()
-        } else {
-            channel.get_d1_name()
+            // Calculate capacity: the number of 28-bit LBA sectors, a 32-bit
+            // value (words 60 and 61).
+            let capacity: BlockSector = u32::from_le_bytes(
+                id[120..124]
+                    .try_into()
+                    .expect("IDENTIFY capacity field is 4 bytes"),
+            );
+            let name = if dev_no == 0 {
+                channel.get_d0_name()
+            } else {
+                channel.get_d1_name()
+            };
+            let name: String = name.iter().collect();
+            (channel.get_channel_num(), capacity, name)
         };
-        let name: String = name.iter().collect();
         println!(
             "channel: {} device: {} name: {} capacity: {}M",
-            channel.get_channel_num(),
+            channel_num,
             dev_no,
             &name,
             capacity >> 11

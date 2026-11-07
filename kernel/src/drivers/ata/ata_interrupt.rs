@@ -1,30 +1,17 @@
-use crate::drivers::ata::ata_core::CHANNELS;
-use alloc::string::String;
+use crate::drivers::ata::ata_channel::CHANNEL_INTERRUPTS;
 use kidneyos_shared::eprintln;
-use kidneyos_shared::serial::inb;
 
-pub fn on_ide_interrupt(vec_no: u8) {
-    for (i, c) in CHANNELS.iter().enumerate() {
-        let channel = &mut c.lock();
-
-        // Check if interrupt is from this channel
-        if vec_no == channel.get_irq() {
-            // Check if channel is expecting an interrupt
-            if channel.is_expect_interrupt() {
-                // Acknowledge the interrupt
-                unsafe {
-                    inb(channel.reg_status());
-                }
-                // Wake up the waiting thread
-                channel.sem_up();
-            } else {
-                // Spurious interrupt
-                eprintln!(
-                    "IDE: Spurious interrupt on channel {} ({})",
-                    i,
-                    String::from_iter(channel.get_name())
-                );
-            }
-        }
+/// Handles IRQ `irq` (14 or 15, the primary and secondary channel's).
+///
+/// It mustn't lock the channel (see `ChannelInterrupt`).
+pub fn on_ide_interrupt(irq: u8) {
+    let channel_num = match irq {
+        14 => 0,
+        15 => 1,
+        _ => return,
+    };
+    // SAFETY: This is the channel's interrupt.
+    if !unsafe { CHANNEL_INTERRUPTS[channel_num].handle() } {
+        eprintln!("IDE: Spurious interrupt on channel {channel_num} (ide{channel_num})");
     }
 }
