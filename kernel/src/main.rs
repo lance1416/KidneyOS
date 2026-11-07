@@ -38,19 +38,12 @@ use threading::{create_thread_state, thread_system_start};
 use vfs::tempfs::TempFS;
 
 #[cfg_attr(not(test), global_allocator)]
-static mut KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
+static KERNEL_ALLOCATOR: KernelAllocator = KernelAllocator::new();
 
-/// Returns the global kernel allocator.
-///
-/// # Safety
-///
-/// The caller must not keep the returned reference across anything that uses
-/// the allocator, like the global allocator interface. (Its methods hold
-/// interrupts off, so one call at a time is fine.)
-pub unsafe fn kernel_allocator() -> &'static mut KernelAllocator {
-    let ptr = &raw mut KERNEL_ALLOCATOR;
-    // SAFETY: Exclusive access is guaranteed by the caller.
-    unsafe { &mut *ptr }
+/// Returns the global kernel allocator (its methods hold interrupts off, and
+/// take `&self` since the global allocator interface uses it too).
+pub fn kernel_allocator() -> &'static KernelAllocator {
+    &KERNEL_ALLOCATOR
 }
 
 #[cfg(not(test))]

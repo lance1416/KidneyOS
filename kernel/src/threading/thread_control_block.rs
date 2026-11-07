@@ -193,8 +193,8 @@ impl ThreadControlBlock {
             if let Err(error) = Self::load_segment(program_header, &mut page_manager, &mut segments)
             {
                 for segment in segments {
-                    // SAFETY: Nothing runs in this address space yet.
-                    unsafe { kernel_allocator().frame_dealloc(segment.frames) };
+                    // Nothing runs in this address space yet.
+                    kernel_allocator().frame_dealloc(segment.frames);
                 }
                 return Err(error);
             }

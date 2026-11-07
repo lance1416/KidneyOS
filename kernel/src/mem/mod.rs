@@ -96,9 +96,19 @@ enum KernelAllocatorState {
 /// The kernel's allocator. There is one CPU, so what keeps threads and
 /// interrupt handlers from using it at the same time is that everything that
 /// uses `state` holds interrupts off.
+///
+/// Every method takes `&self`, like [`GlobalAlloc`]'s: the global allocator
+/// can be called from inside them (`init` allocates the core map with `vec!`),
+/// so a `&mut KernelAllocator`, or a `&mut` into `state` held across an
+/// allocation, would alias the one `GlobalAlloc` makes. Each method borrows
+/// `state` mutably only while it doesn't allocate.
 pub struct KernelAllocator {
     state: UnsafeCell<KernelAllocatorState>,
 }
+
+// SAFETY: There is one CPU, and everything that uses `state` holds interrupts
+// off, so it is never used from two places at once.
+unsafe impl Sync for KernelAllocator {}
 
 impl KernelAllocator {
     pub const fn new() -> KernelAllocator {
@@ -118,11 +128,8 @@ impl KernelAllocator {
     /// # Safety
     ///
     /// This function can only be called when the allocator is uninitialized.
-    pub unsafe fn init(&mut self, memory: Range<usize>) {
-        let KernelAllocatorState::SetupState { dummy_allocator } = self.state.get_mut() else {
-            // We can panic here because the kernel hasn't been initialized yet
-            panic!("[PANIC]: init called while kernel allocator was already initialized");
-        };
+    pub unsafe fn init(&self, memory: Range<usize>) {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
 
         // The exclusive max address is the end of the region in the direct map.
         let frames_ceil_address = PHYS_MAP_OFFSET + memory.end;
@@ -136,65 +143,96 @@ impl KernelAllocator {
             "no usable memory after the kernel"
         );
 
-        // Check to see if dummy_allocator initialized properly (both start and end should be zero)
-        let start = dummy_allocator.get_start_address();
-        let end = dummy_allocator.get_end_address();
-        assert_eq!(start, 0);
-        assert_eq!(end, 0);
+        {
+            // SAFETY: Interrupts are off, and this borrow ends before the
+            // allocation below.
+            let KernelAllocatorState::SetupState { dummy_allocator } =
+                (unsafe { &mut *self.state.get() })
+            else {
+                // We can panic here because the kernel hasn't been initialized yet
+                panic!("[PANIC]: init called while kernel allocator was already initialized");
+            };
 
-        // Set the proper start and end addresses
-        dummy_allocator.set_start_address(frames_base_address);
-        dummy_allocator.set_end_address(frames_ceil_address);
+            // Check to see if dummy_allocator initialized properly (both start and end should be zero)
+            let start = dummy_allocator.get_start_address();
+            let end = dummy_allocator.get_end_address();
+            assert_eq!(start, 0);
+            assert_eq!(end, 0);
+
+            // Set the proper start and end addresses
+            dummy_allocator.set_start_address(frames_base_address);
+            dummy_allocator.set_end_address(frames_ceil_address);
+        }
 
         let num_frames_in_system =
             usable_frames((frames_ceil_address - frames_base_address) / PAGE_FRAME_SIZE);
 
         // This should ALWAYS be the first global allocation to take place - should use dummy allocator
-        //
+        // (through GlobalAlloc::alloc, which moves its start address past the
+        // core map).
         let core_map: Box<[CoreMapEntry]> =
             vec![CoreMapEntry::default(); num_frames_in_system].into_boxed_slice();
 
+        // SAFETY: Interrupts are off, and nothing else borrows `state` now.
+        let KernelAllocatorState::SetupState { dummy_allocator } = (unsafe { &*self.state.get() })
+        else {
+            panic!("[PANIC]: the core map wasn't allocated with the dummy allocator");
+        };
+        let frames_start_address = dummy_allocator.get_start_address();
+
         // Check that the dummy allocator actually updated its internal state
         // I.e. the start address should have moved to accommodate Coremap Entries
-        // The Coremap should take up 128 frames
-        assert_ne!(frames_base_address, dummy_allocator.get_start_address());
+        assert_ne!(frames_base_address, frames_start_address);
 
         let frame_allocator = FrameAllocatorSolution::<NextFit>::new(
             NonNull::slice_from_raw_parts(
-                NonNull::new(dummy_allocator.get_start_address() as *mut u8)
+                NonNull::new(frames_start_address as *mut u8)
                     .expect("Could not create NonNull pointer"),
                 PAGE_FRAME_SIZE * num_frames_in_system,
             ),
             core_map,
         );
 
-        *self.state.get_mut() = KernelAllocatorState::Initialized {
-            subblock_allocator: SubblockAllocatorSolution::new(frame_allocator),
-        };
+        // SAFETY: Interrupts are off, and nothing else borrows `state` now.
+        unsafe {
+            *self.state.get() = KernelAllocatorState::Initialized {
+                subblock_allocator: SubblockAllocatorSolution::new(frame_allocator),
+            };
+        }
     }
 
-    pub fn frame_alloc(&mut self, frames: usize) -> Result<NonNull<u8>, AllocError> {
+    pub fn frame_alloc(&self, frames: usize) -> Result<NonNull<u8>, AllocError> {
         let _guard = hold_interrupts(IntrLevel::IntrOff);
-        let KernelAllocatorState::Initialized { subblock_allocator } = self.state.get_mut() else {
+        // SAFETY: Interrupts are off, and the frame allocator doesn't use the
+        // global allocator.
+        let KernelAllocatorState::Initialized { subblock_allocator } =
+            (unsafe { &mut *self.state.get() })
+        else {
             return Err(AllocError);
         };
 
         subblock_allocator.get_frame_allocator().alloc(frames)
     }
 
-    pub fn frame_dealloc(&mut self, ptr: NonNull<u8>) {
+    pub fn frame_dealloc(&self, ptr: NonNull<u8>) {
         let _guard = hold_interrupts(IntrLevel::IntrOff);
-        let KernelAllocatorState::Initialized { subblock_allocator } = self.state.get_mut() else {
+        // SAFETY: As in `frame_alloc`.
+        let KernelAllocatorState::Initialized { subblock_allocator } =
+            (unsafe { &mut *self.state.get() })
+        else {
             halt!("[KERNEL ALLOCATOR]: Dealloc called on DeInitialized or SetupState kernel");
         };
 
         unsafe { subblock_allocator.get_frame_allocator().dealloc(ptr) };
     }
 
-    pub fn deinit(&mut self) {
+    pub fn deinit(&self) {
+        let _guard = hold_interrupts(IntrLevel::IntrOff);
+        // SAFETY: Interrupts are off, and the subblock allocator's deinit
+        // doesn't use the global allocator.
         let KernelAllocatorState::Initialized {
             subblock_allocator, ..
-        } = self.state.get_mut()
+        } = (unsafe { &mut *self.state.get() })
         else {
             panic!("[KERNEL ALLOCATOR]: deinit called before initialization of kernel allocator");
         };
@@ -213,7 +251,8 @@ impl KernelAllocator {
             halt!("[KERNEL ALLOCATOR]: Leaks detected");
         }
 
-        *self.state.get_mut() = KernelAllocatorState::DeInitialized;
+        // SAFETY: As above; the borrow of the subblock allocator has ended.
+        unsafe { *self.state.get() = KernelAllocatorState::DeInitialized };
     }
 }
 
