@@ -77,8 +77,11 @@ jobs:
         IMAGE: ${{ steps.load.outputs.image }}
         ARCH: ${{ matrix.arch }}
       run: |
-        docker tag "$IMAGE:latest" "$IMAGE:latest-$ARCH"
-        docker push "$IMAGE:latest-$ARCH"
+        # Push with OCI media types (docker push uses Docker's), so that the
+        # merge job makes an OCI index, which can hold annotations. skopeo
+        # reads the credentials that docker/login-action saved.
+        nix run --inputs-from ./nix nixpkgs#skopeo -- --insecure-policy \
+          copy --format oci docker-archive:builder.tar.gz "docker://$IMAGE:latest-$ARCH"
   merge:
     name: Publish multi-architecture image
     needs: build
